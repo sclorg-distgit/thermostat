@@ -1,0 +1,6 @@
+# Custom configuration for Thermostat's CATALINA_BASE based tomcat.
+#
+# Where your tomcat installation lives
+CATALINA_BASE="__catalina_base__"
+CATALINA_HOME="/usr/share/tomcat"
+JAVA_OPTS="-Djava.security.auth.login.config=__jaas_config__"

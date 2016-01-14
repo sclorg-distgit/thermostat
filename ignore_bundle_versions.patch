@@ -1,0 +1,19 @@
+diff --git a/distribution/scripts/thermostat b/distribution/scripts/thermostat
+--- a/distribution/scripts/thermostat
++++ b/distribution/scripts/thermostat
+@@ -113,13 +113,13 @@
+     if [ x"$PID_FILE" = "x" ]; then
+         usage 
+     else
+-        ${JAVA} "${JAVA_ARGS[@]}" -cp ${SERVICE_CLASSPATH} ${THERMOSTAT_MAIN} "${ARGS[@]}" &
++        ${JAVA} "${JAVA_ARGS[@]}" -cp ${SERVICE_CLASSPATH} ${THERMOSTAT_MAIN} --ignore-bundle-versions "${ARGS[@]}" &
+         retval=$?
+         echo $! > $PID_FILE
+         retval=$(( $retval + $? ))
+     fi
+ else
+-    ${JAVA} "${JAVA_ARGS[@]}" -cp ${SERVICE_CLASSPATH} ${THERMOSTAT_MAIN} "${ARGS[@]}"
++    ${JAVA} "${JAVA_ARGS[@]}" -cp ${SERVICE_CLASSPATH} ${THERMOSTAT_MAIN} --ignore-bundle-versions "${ARGS[@]}"
+     retval=$?
+ fi
+ exit $retval
