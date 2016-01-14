@@ -1,0 +1,30 @@
+# HG changeset patch
+# User Omair Majid <omajid@redhat.com>
+# Date 1426001971 14400
+#      Tue Mar 10 11:39:31 2015 -0400
+# Node ID db706e3e09ed947ff77cbe75e23dd82c5d6b8b82
+# Parent  505bcac210496aadb32b9be4a0869260fe0a5005
+Don't break terminal on Ctrl-c when reading password
+Reviewed-by: jerboaa
+Review-thread: http://icedtea.classpath.org/pipermail/thermostat/2015-March/013058.html
+
+diff --git a/distribution/scripts/thermostat-setup b/distribution/scripts/thermostat-setup
+--- a/distribution/scripts/thermostat-setup
++++ b/distribution/scripts/thermostat-setup
+@@ -56,6 +56,8 @@
+ # For debugging
+ #set -xv
+ 
++tty_flags="$(stty -g)"
++
+ # Interruptions are failures
+ trap exitFail SIGINT
+ 
+@@ -122,6 +124,7 @@
+   removeTempStampFile
+   cleanupSedFiles
+   echo 'Thermostat setup failed!' 1>&2
++  stty "$tty_flags"
+   exit 1
+ }
+ 

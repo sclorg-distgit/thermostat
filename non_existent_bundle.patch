@@ -1,0 +1,21 @@
+# HG changeset patch
+# User Severin Gehwolf <sgehwolf@redhat.com>
+# Date 1422279733 -3600
+# Node ID 296194a4877887fd69eaf70e7f6aa831b25fbd2b
+# Parent  48055b70ddecb2efd4fb2977044c1285900bedcd
+Remove loading of non-existent agent-proxy-common bundle.
+Reviewed-by: jkang
+Review-thread: http://icedtea.classpath.org/pipermail/thermostat/2015-January/012480.html
+
+diff -r 48055b70ddec -r 296194a48778 web/endpoint-plugin/distribution/thermostat-plugin.xml
+--- a/web/endpoint-plugin/distribution/thermostat-plugin.xml	Mon Jan 26 11:37:24 2015 -0500
++++ b/web/endpoint-plugin/distribution/thermostat-plugin.xml	Mon Jan 26 14:42:13 2015 +0100
+@@ -73,7 +73,6 @@
+         <bundle><symbolic-name>com.google.gson</symbolic-name><version>${gson.version}</version></bundle>
+         <bundle><symbolic-name>com.redhat.thermostat.process</symbolic-name><version>${project.version}</version></bundle>
+         <bundle><symbolic-name>com.redhat.thermostat.agent.cli</symbolic-name><version>${project.version}</version></bundle>
+-        <bundle><symbolic-name>com.redhat.thermostat.agent.proxy.common</symbolic-name><version>${project.version}</version></bundle>
+         <bundle><symbolic-name>com.redhat.thermostat.common.command</symbolic-name><version>${project.version}</version></bundle>
+         <bundle><symbolic-name>com.redhat.thermostat.agent.command</symbolic-name><version>${project.version}</version></bundle>
+         <bundle><symbolic-name>com.redhat.thermostat.killvm.agent</symbolic-name><version>${project.version}</version></bundle>
+

@@ -1,0 +1,9 @@
+# This file is "sourced" for systemd services only
+#
+# If thermostat {storage,agent} is run via systemd,
+# data directories are in /usr/share/thermostat
+#
+# Do not change this unless you know what you are doing
+THERMOSTAT_HOME=__thermostat_home__
+USER_THERMOSTAT_HOME=__user_thermostat_home__
+THERMOSTAT1_SCLS_ENABLED="thermostat1 rh-mongodb26"

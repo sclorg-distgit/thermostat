@@ -1,0 +1,19 @@
+--- a/killvm/common/src/main/java/com/redhat/thermostat/killvm/common/internal/Activator.java	2014-12-19 02:10:45.423793301 -0700
++++ b/killvm/common/src/main/java/com/redhat/thermostat/killvm/common/internal/Activator.java.patched	2014-12-19 02:11:17.294777488 -0700
+@@ -51,14 +51,14 @@
+ 
+     @Override
+     public void start(final BundleContext context) throws Exception {
+-        tracker = new ServiceTracker(context, RequestQueue.class, null) {
++        tracker = new ServiceTracker(context, RequestQueue.class.getName(), null) {
+             @Override
+             public Object addingService(ServiceReference reference) {
+ 
+                 RequestQueue requestqueue = (RequestQueue) context.getService(reference);
+ 
+                 KillVMRequest gcRequest = new KillVMRequest(requestqueue);
+-                context.registerService(KillVMRequest.class, gcRequest, null);
++                context.registerService(KillVMRequest.class.getName(), gcRequest, null);
+                 return super.addingService(reference);
+             }
+ 

@@ -1,0 +1,1001 @@
+# HG changeset patch
+# Parent 580b6482ef65a0e0b5a45f2923aecd75e838dcd3
+diff --git a/distribution/config/commands/add-mongodb-user.properties b/distribution/config/commands/add-mongodb-user.properties
+deleted file mode 100644
+--- a/distribution/config/commands/add-mongodb-user.properties
++++ /dev/null
+@@ -1,23 +0,0 @@
+-bundles = com.redhat.thermostat.storage.mongodb=${project.version}, \
+-          org.mongodb.mongo-java-driver=${mongo-driver.osgi-version}, \
+-          org.apache.commons.beanutils=${commons-beanutils.version}, \
+-          org.apache.commons.codec=${commons-codec.osgi-version}, \
+-          org.apache.commons.collections=${commons-collections.version}, \
+-          org.apache.commons.logging=${commons-logging.version}
+-
+-description = adds a new mongodb user to the thermostat DB, reading credentials \
+- from standard input
+-
+-usage = add-mongodb-user -d <dbUrl> |\
+-        add-mongodb-user -s
+-
+-options = AUTO_LOG_OPTION, AUTO_DB_OPTIONS, startStorage
+-
+-startStorage.short = s
+-startStorage.long = startStorage
+-startStorage.description = start storage with appropriate options before \
+- running the command and stop the storage when the command finishes
+-startStorage.required = false
+-startStorage.hasarg = false
+-
+-environments = cli
+diff --git a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/Activator.java b/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/Activator.java
+--- a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/Activator.java
++++ b/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/Activator.java
+@@ -40,8 +40,6 @@
+ import org.osgi.framework.BundleContext;
+ import org.osgi.framework.ServiceRegistration;
+ 
+-import com.redhat.thermostat.common.cli.CommandRegistry;
+-import com.redhat.thermostat.common.cli.CommandRegistryImpl;
+ import com.redhat.thermostat.storage.core.StorageProvider;
+ import com.redhat.thermostat.storage.mongodb.MongoStorageProvider;
+ 
+@@ -49,20 +47,16 @@
+ 
+     @SuppressWarnings("rawtypes")
+     private ServiceRegistration reg;
+-    private CommandRegistry cmdReg;
+     
+     @Override
+     public void start(BundleContext context) throws Exception {
+         StorageProvider prov = new MongoStorageProvider();
+         reg = context.registerService(StorageProvider.class.getName(), prov, null);
+-        cmdReg = new CommandRegistryImpl(context);
+-        cmdReg.registerCommand(AddUserCommandDispatcher.COMMAND_NAME, new AddUserCommandDispatcher(context));
+     }
+ 
+     @Override
+     public void stop(BundleContext context) throws Exception {
+         reg.unregister();
+-        cmdReg.unregisterCommands();
+     }
+ 
+ }
+diff --git a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommand.java b/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommand.java
+deleted file mode 100644
+--- a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommand.java
++++ /dev/null
+@@ -1,198 +0,0 @@
+-/*
+- * Copyright 2012-2014 Red Hat, Inc.
+- *
+- * This file is part of Thermostat.
+- *
+- * Thermostat is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published
+- * by the Free Software Foundation; either version 2, or (at your
+- * option) any later version.
+- *
+- * Thermostat is distributed in the hope that it will be useful, but
+- * WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with Thermostat; see the file COPYING.  If not see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * Linking this code with other modules is making a combined work
+- * based on this code.  Thus, the terms and conditions of the GNU
+- * General Public License cover the whole combination.
+- *
+- * As a special exception, the copyright holders of this code give
+- * you permission to link this code with independent modules to
+- * produce an executable, regardless of the license terms of these
+- * independent modules, and to copy and distribute the resulting
+- * executable under terms of your choice, provided that you also
+- * meet, for each linked independent module, the terms and conditions
+- * of the license of that module.  An independent module is a module
+- * which is not derived from or based on this code.  If you modify
+- * this code, you may extend this exception to your version of the
+- * library, but you are not obligated to do so.  If you do not wish
+- * to do so, delete this exception statement from your version.
+- */
+-
+-package com.redhat.thermostat.storage.mongodb.internal;
+-
+-import java.io.File;
+-import java.io.IOException;
+-import java.lang.reflect.Field;
+-import java.util.Arrays;
+-import java.util.Objects;
+-
+-import org.osgi.framework.BundleContext;
+-import org.osgi.framework.ServiceReference;
+-import org.osgi.framework.ServiceRegistration;
+-
+-import com.redhat.thermostat.common.cli.CommandContext;
+-import com.redhat.thermostat.common.cli.CommandException;
+-import com.redhat.thermostat.common.tools.StorageAuthInfoGetter;
+-import com.redhat.thermostat.shared.config.CommonPaths;
+-import com.redhat.thermostat.shared.locale.LocalizedString;
+-import com.redhat.thermostat.shared.locale.Translate;
+-import com.redhat.thermostat.storage.core.DbService;
+-import com.redhat.thermostat.storage.core.DbServiceFactory;
+-import com.redhat.thermostat.storage.core.QueuedStorage;
+-import com.redhat.thermostat.storage.core.Storage;
+-import com.redhat.thermostat.storage.core.StorageCredentials;
+-
+-/**
+- * This command needs to be in the mongodb storage bundle since it
+- * uses MongoStorage directly (casts to it).
+- *
+- */
+-public class AddUserCommand extends BaseAddUserCommand {
+-    
+-    private static final Translate<LocaleResources> t = LocaleResources.createLocalizer();
+-    static final String DB_URL_ARG = "dbUrl";
+-    private final BundleContext context;
+-    private final StorageCredentials emptyCredentials;
+-    
+-    AddUserCommand(BundleContext context) {
+-        this.context = context;
+-        // These are empty credentials we'll use for the initial connect. We
+-        // connect with them when the local host exception is turned off.
+-        emptyCredentials = new StorageCredentials() {
+-            
+-            @Override
+-            public String getUsername() {
+-                return null;
+-            }
+-            
+-            @Override
+-            public char[] getPassword() {
+-                return null;
+-            }
+-        };
+-    }
+-
+-    // PRE: storage started with --permitLocalHostException.
+-    // FIXME: Is there anything we can do to ensure this precondition?
+-    @Override
+-    public void run(CommandContext ctx) throws CommandException {
+-        // Check if mongodb stamp file exists.
+-        ServiceReference commonPathRef = context.getServiceReference(CommonPaths.class.getName());
+-        requireNonNull(commonPathRef, t.localize(LocaleResources.COMMON_PATHS_SERVICE_UNAVAILABLE));
+-        CommonPaths commonPath = (CommonPaths)context.getService(commonPathRef);
+-        File dataDir = commonPath.getUserPersistentDataDirectory();
+-        // Since this is backing storage specific, it's most likely not a good
+-        // candidate for CommonPaths
+-        File mongodbSetupStamp = new File(dataDir, BaseAddUserCommand.MONGODB_STAMP_FILE_NAME);
+-        if (mongodbSetupStamp.exists()) {
+-            String msg = t.localize(LocaleResources.MONGODB_SETUP_FILE_EXISTS,
+-                                    mongodbSetupStamp.getAbsolutePath()).getContents();
+-            ctx.getConsole().getOutput().println(msg);
+-            return;
+-        }
+-        
+-        ServiceReference dbServiceRef = context.getServiceReference(DbService.class);
+-        if (dbServiceRef != null) {
+-            // Already connected, bail out
+-            throw new CommandException(t.localize(LocaleResources.ALREADY_CONNECTED_TO_STORAGE_WARNING));
+-        }
+-        String dbUrl = ctx.getArguments().getArgument(DB_URL_ARG);
+-        // dbUrl is a required argument. This should never happen
+-        Objects.requireNonNull(dbUrl);
+-        // we only understand "mongodb://" URLs
+-        if (!dbUrl.startsWith("mongodb://")) {
+-            throw new CommandException(t.localize(LocaleResources.UNKNOWN_STORAGE_URL));
+-        }
+-        
+-        // Register empty credentials so that connection succeeds
+-        ServiceRegistration reg = context.registerService(StorageCredentials.class.getName(), emptyCredentials, null);
+-        DbServiceFactory factory = new DbServiceFactory();
+-        DbService service = factory.createDbService(dbUrl);
+-        // this synchronously connects to storage
+-        service.connect();
+-        // Unregister empty credentials
+-        reg.unregister();
+-        
+-        ServiceReference storageRef = context.getServiceReference(Storage.class.getName());
+-        requireNonNull(storageRef, t.localize(LocaleResources.STORAGE_SERVICE_UNAVAILABLE));
+-        @SuppressWarnings("unchecked")
+-        // FIXME: Hack alarm. We use knowledge that via MongoStorageProvider we
+-        //        have a MongoStorage instance wrapped in QueuedStorage. What's
+-        //        more, we use the "delegate" field name in order to get at the
+-        //        MongoStorage instance, which we cast to. I'm not sure if adding
+-        //        method in BackingStorage (the interface) directly would be 
+-        //        any better than this. After all, this is very backing storage
+-        //        impl specific. For now do this hack :-/  
+-        QueuedStorage storage = (QueuedStorage)context.getService(storageRef);
+-        MongoStorage mongoStorage = getDelegate(storage);
+-        requireNonNull(mongoStorage, t.localize(LocaleResources.MONGOSTORAGE_RETRIEVAL_FAILED));
+-        StorageAuthInfoGetter getter = null;
+-        try {
+-            LocalizedString userPrompt = new LocalizedString("Please enter the username you'd like to add to mongodb storage at " + dbUrl + ": ");
+-            LocalizedString passWordPrompt = new LocalizedString("Please enter the desired password of this user: ");
+-            getter = new StorageAuthInfoGetter(ctx.getConsole(), userPrompt, passWordPrompt);
+-        } catch (IOException e) {
+-            throw new CommandException(t.localize(LocaleResources.ADDING_USER_FAILED));
+-        }
+-        ConsoleStorageCredentials creds = new ConsoleStorageCredentials(getter);
+-        addUser(mongoStorage, creds);
+-        
+-        // create the STAMP file
+-        try {
+-            mongodbSetupStamp.createNewFile();
+-        } catch (IOException e) {
+-            String msg = t.localize(LocaleResources.STAMP_FILE_CREATION_FAILED,
+-                                    mongodbSetupStamp.getAbsolutePath()).getContents();
+-            ctx.getConsole().getError().println(msg);
+-            throw new CommandException(new LocalizedString(msg));
+-        }
+-        
+-        String msg = t.localize(LocaleResources.MONGODB_USER_SETUP_COMPLETE).getContents();
+-        ctx.getConsole().getOutput().println(msg);
+-    }
+-    
+-    // package-private for testing
+-    void addUser(MongoStorage mongoStorage, StorageCredentials creds) {
+-        // It's important that getUsername is called prior getPassword.
+-        // otherwise prompts don't make much sense.
+-        String username = creds.getUsername();
+-        char[] pwd = creds.getPassword();
+-        mongoStorage.addUser(username, pwd);
+-        // zero out password. We no longer use it.
+-        Arrays.fill(pwd, '\0');
+-    }
+-
+-    // package-private for testing
+-    MongoStorage getDelegate(QueuedStorage storage) {
+-        try {
+-            Field field = storage.getClass().getDeclaredField("delegate");
+-            field.setAccessible(true);
+-            MongoStorage mongo = (MongoStorage)field.get(storage);
+-            return mongo;
+-        } catch (Exception e) {
+-            return null;
+-        }
+-    }
+-    
+-    @Override
+-    public boolean isStorageRequired() {
+-        return false;
+-    }
+-
+-}
+diff --git a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandDispatcher.java b/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandDispatcher.java
+deleted file mode 100644
+--- a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandDispatcher.java
++++ /dev/null
+@@ -1,78 +0,0 @@
+-/*
+- * Copyright 2012-2014 Red Hat, Inc.
+- *
+- * This file is part of Thermostat.
+- *
+- * Thermostat is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published
+- * by the Free Software Foundation; either version 2, or (at your
+- * option) any later version.
+- *
+- * Thermostat is distributed in the hope that it will be useful, but
+- * WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with Thermostat; see the file COPYING.  If not see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * Linking this code with other modules is making a combined work
+- * based on this code.  Thus, the terms and conditions of the GNU
+- * General Public License cover the whole combination.
+- *
+- * As a special exception, the copyright holders of this code give
+- * you permission to link this code with independent modules to
+- * produce an executable, regardless of the license terms of these
+- * independent modules, and to copy and distribute the resulting
+- * executable under terms of your choice, provided that you also
+- * meet, for each linked independent module, the terms and conditions
+- * of the license of that module.  An independent module is a module
+- * which is not derived from or based on this code.  If you modify
+- * this code, you may extend this exception to your version of the
+- * library, but you are not obligated to do so.  If you do not wish
+- * to do so, delete this exception statement from your version.
+- */
+-
+-package com.redhat.thermostat.storage.mongodb.internal;
+-
+-import org.osgi.framework.BundleContext;
+-
+-import com.redhat.thermostat.common.cli.CommandContext;
+-import com.redhat.thermostat.common.cli.CommandException;
+-import com.redhat.thermostat.shared.locale.Translate;
+-
+-/**
+- * Dispatcher making sure either -d or -s has been provided.
+- *
+- */
+-class AddUserCommandDispatcher extends BaseAddUserCommand {
+-    
+-    private static final Translate<LocaleResources> t = LocaleResources.createLocalizer();
+-    private static final String START_STORAGE_ARG = "startStorage";
+-    private static final String DB_URL_ARG = "dbUrl";
+-    static final String COMMAND_NAME = "add-mongodb-user";
+-    private final BundleContext context;
+-    private BaseAddUserCommand command;
+-    
+-    AddUserCommandDispatcher(BundleContext context, BaseAddUserCommand cmd) {
+-        this.context = context;
+-        this.command = cmd;
+-    }
+-
+-    AddUserCommandDispatcher(BundleContext context) {
+-        this(context, new AddUserCommand(context));
+-    }
+-    
+-    @Override
+-    public void run(CommandContext ctx) throws CommandException {
+-        if (ctx.getArguments().hasArgument(START_STORAGE_ARG)) {
+-            // decorate and run
+-            command = new StartStopAddUserCommandDecorator(context, command);
+-        } else if (!ctx.getArguments().hasArgument(DB_URL_ARG)) {
+-            throw new CommandException(t.localize(LocaleResources.DISPATCHER_WRONG_OPTION));
+-        }
+-        command.run(ctx);
+-    }
+-
+-}
+diff --git a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/BaseAddUserCommand.java b/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/BaseAddUserCommand.java
+deleted file mode 100644
+--- a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/BaseAddUserCommand.java
++++ /dev/null
+@@ -1,62 +0,0 @@
+-/*
+- * Copyright 2012-2014 Red Hat, Inc.
+- *
+- * This file is part of Thermostat.
+- *
+- * Thermostat is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published
+- * by the Free Software Foundation; either version 2, or (at your
+- * option) any later version.
+- *
+- * Thermostat is distributed in the hope that it will be useful, but
+- * WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with Thermostat; see the file COPYING.  If not see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * Linking this code with other modules is making a combined work
+- * based on this code.  Thus, the terms and conditions of the GNU
+- * General Public License cover the whole combination.
+- *
+- * As a special exception, the copyright holders of this code give
+- * you permission to link this code with independent modules to
+- * produce an executable, regardless of the license terms of these
+- * independent modules, and to copy and distribute the resulting
+- * executable under terms of your choice, provided that you also
+- * meet, for each linked independent module, the terms and conditions
+- * of the license of that module.  An independent module is a module
+- * which is not derived from or based on this code.  If you modify
+- * this code, you may extend this exception to your version of the
+- * library, but you are not obligated to do so.  If you do not wish
+- * to do so, delete this exception statement from your version.
+- */
+-
+-package com.redhat.thermostat.storage.mongodb.internal;
+-
+-import com.redhat.thermostat.common.cli.AbstractCommand;
+-import com.redhat.thermostat.common.cli.CommandContext;
+-import com.redhat.thermostat.common.cli.CommandException;
+-
+-/**
+- * 
+- * Base class for user setup decorators.
+- * 
+- * @see AddUserCommand
+- * @see StartStopAddUserCommandDecorator
+- *
+- */
+-abstract class BaseAddUserCommand extends AbstractCommand {
+-    
+-    static final String MONGODB_STAMP_FILE_NAME = "mongodb-user-done.stamp";
+-    
+-    @Override
+-    abstract public void run(CommandContext ctx) throws CommandException;
+-    
+-    @Override
+-    public boolean isStorageRequired() {
+-        return false;
+-    }
+-}
+diff --git a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/StartStopAddUserCommandDecorator.java b/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/StartStopAddUserCommandDecorator.java
+deleted file mode 100644
+--- a/storage/mongo/src/main/java/com/redhat/thermostat/storage/mongodb/internal/StartStopAddUserCommandDecorator.java
++++ /dev/null
+@@ -1,268 +0,0 @@
+-/*
+- * Copyright 2012-2014 Red Hat, Inc.
+- *
+- * This file is part of Thermostat.
+- *
+- * Thermostat is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published
+- * by the Free Software Foundation; either version 2, or (at your
+- * option) any later version.
+- *
+- * Thermostat is distributed in the hope that it will be useful, but
+- * WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with Thermostat; see the file COPYING.  If not see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * Linking this code with other modules is making a combined work
+- * based on this code.  Thus, the terms and conditions of the GNU
+- * General Public License cover the whole combination.
+- *
+- * As a special exception, the copyright holders of this code give
+- * you permission to link this code with independent modules to
+- * produce an executable, regardless of the license terms of these
+- * independent modules, and to copy and distribute the resulting
+- * executable under terms of your choice, provided that you also
+- * meet, for each linked independent module, the terms and conditions
+- * of the license of that module.  An independent module is a module
+- * which is not derived from or based on this code.  If you modify
+- * this code, you may extend this exception to your version of the
+- * library, but you are not obligated to do so.  If you do not wish
+- * to do so, delete this exception statement from your version.
+- */
+-
+-package com.redhat.thermostat.storage.mongodb.internal;
+-
+-import java.io.File;
+-import java.util.ArrayList;
+-import java.util.Collections;
+-import java.util.List;
+-import java.util.concurrent.CountDownLatch;
+-
+-import org.osgi.framework.BundleContext;
+-import org.osgi.framework.ServiceReference;
+-
+-import com.redhat.thermostat.common.ActionEvent;
+-import com.redhat.thermostat.common.ActionListener;
+-import com.redhat.thermostat.common.cli.AbstractStateNotifyingCommand;
+-import com.redhat.thermostat.common.cli.Arguments;
+-import com.redhat.thermostat.common.cli.CommandContext;
+-import com.redhat.thermostat.common.cli.CommandContextFactory;
+-import com.redhat.thermostat.common.cli.CommandException;
+-import com.redhat.thermostat.common.tools.ApplicationState;
+-import com.redhat.thermostat.launcher.Launcher;
+-import com.redhat.thermostat.shared.config.CommonPaths;
+-import com.redhat.thermostat.shared.locale.Translate;
+-
+-/*
+- * A command which adds a mongdb user by using AddUserCommand. It has been
+- * introduced in order to aid boot-strapping of thermostat deployments. In order
+- * to set up a user in mongodb, storage needs to be started with the
+- * --permitLocalhostException option first. Then the credentials need to be
+- * injected and storage stopped again. This command performs all three
+- * required steps.
+- */
+-public class StartStopAddUserCommandDecorator extends BaseAddUserCommand {
+-
+-    public static final String COMMAND_NAME = "admin-mongodb-creds-setup";
+-    private static final Translate<LocaleResources> t = LocaleResources.createLocalizer();
+-    private final BundleContext context;
+-    private final List<ActionListener<ApplicationState>> listeners;
+-    private final CountDownLatch setupFinishedBarrier;
+-    private final BaseAddUserCommand decoratee;
+-    private boolean setupSuccessful;
+-    private Launcher launcher;
+-    private CommandContext cmdCtx;
+-    
+-    StartStopAddUserCommandDecorator(BundleContext context, BaseAddUserCommand command) {
+-        this.context = context;
+-        this.listeners = new ArrayList<>(1);
+-        this.setupFinishedBarrier = new CountDownLatch(1);
+-        this.setupSuccessful = true;
+-        this.decoratee = command;
+-    }
+-    
+-    @Override
+-    public void run(CommandContext ctx) throws CommandException {
+-        cmdCtx = ctx;
+-        if (!stampFileExists()) {
+-            startStorageAndRunDecoratee();
+-            stopStorage();
+-        }
+-        // if stamp file exists, there is nothing to do.
+-        String msg;
+-        if (setupSuccessful) {
+-            msg = t.localize(LocaleResources.USER_SETUP_COMPLETE).getContents();
+-            cmdCtx.getConsole().getOutput().println(msg);
+-        } else {
+-            msg = t.localize(LocaleResources.USER_SETUP_FAILED).getContents();
+-            cmdCtx.getConsole().getOutput().println(msg);
+-        }
+-    }
+-
+-    private void stopStorage() throws CommandException {
+-        listeners.clear();
+-        CountDownLatch storageStoppedlatch = new CountDownLatch(1);
+-        StorageStoppedListener listener = new StorageStoppedListener(storageStoppedlatch);
+-        String[] storageStopArgs = new String[] {
+-                "storage", "--stop"
+-        };
+-        listeners.add(listener);
+-        launcher.run(storageStopArgs, listeners, false);
+-        try {
+-            storageStoppedlatch.await();
+-        } catch (InterruptedException e) {
+-            setupSuccessful = false;
+-            throw new CommandException(t.localize(LocaleResources.INTERRUPTED_WAITING_FOR_STORAGE_STOP), e);
+-        }
+-        if (!listener.storageStopPassed) {
+-            setupSuccessful = false;
+-            String msg = t.localize(LocaleResources.STORAGE_STOP_FAILED).getContents();
+-            cmdCtx.getConsole().getError().println(msg);
+-        }
+-    }
+-
+-    private void startStorageAndRunDecoratee() throws CommandException {
+-        ServiceReference launcherRef = context.getServiceReference(Launcher.class);
+-        if (launcherRef == null) {
+-            throw new CommandException(t.localize(LocaleResources.LAUNCHER_SERVICE_UNAVAILABLE));
+-        }
+-        launcher = (Launcher) context.getService(launcherRef);
+-        StorageStartedListener listener = new StorageStartedListener();
+-        listeners.add(listener);
+-        String[] storageStartArgs = new String[] { "storage", "--start", "--permitLocalhostException"};
+-        launcher.run(storageStartArgs, listeners, false);
+-        try {
+-            setupFinishedBarrier.await();
+-        } catch (InterruptedException e) {
+-            e.printStackTrace();
+-        }
+-    }
+-
+-    private boolean stampFileExists() throws CommandException {
+-        ServiceReference commonPathRef = context.getServiceReference(CommonPaths.class.getName());
+-        if (commonPathRef == null) {
+-            throw new CommandException(t.localize(LocaleResources.COMMON_PATHS_SERVICE_UNAVAILABLE));
+-        }
+-        CommonPaths commonPath = (CommonPaths)context.getService(commonPathRef);
+-        File dataDir = commonPath.getUserPersistentDataDirectory();
+-        // Since this is backing storage specific, it's most likely not a good
+-        // candidate for CommonPaths
+-        File mongodbSetupStamp = new File(dataDir, BaseAddUserCommand.MONGODB_STAMP_FILE_NAME);
+-        if (mongodbSetupStamp.exists()) {
+-            String msg = t.localize(LocaleResources.MONGODB_SETUP_FILE_EXISTS,
+-                                    mongodbSetupStamp.getAbsolutePath()).getContents();
+-            cmdCtx.getConsole().getOutput().println(msg);
+-            return true;
+-        } else {
+-            return false;
+-        }
+-    }
+-    
+-    private class StorageStartedListener implements ActionListener<ApplicationState> {
+-     
+-        @Override
+-        public void actionPerformed(ActionEvent<ApplicationState> actionEvent) {
+-            if (actionEvent.getSource() instanceof AbstractStateNotifyingCommand) {
+-                AbstractStateNotifyingCommand storage = (AbstractStateNotifyingCommand) actionEvent.getSource();
+-                // Implementation detail: there is a single StorageCommand instance registered
+-                // as an OSGi service.  We remove ourselves as listener so that we don't get
+-                // notified in the case that the command is invoked by some other means later.
+-                storage.getNotifier().removeActionListener(this);
+-                
+-                try {
+-                    switch (actionEvent.getActionId()) {
+-                    case START:
+-                        // Payload is connection URL
+-                        Object payload = actionEvent.getPayload();
+-                        if (payload == null || !(payload instanceof String)) {
+-                            setupSuccessful = false;
+-                            throw new CommandException(t.localize(LocaleResources.UNRECOGNIZED_PAYLOAD_FROM_STORAGE_CMD));
+-                        }
+-                        final String dbUrl = (String)payload;
+-                        try {
+-                            CommandContext ctx = getAddUserCommandContext(dbUrl);
+-                            decoratee.run(ctx);
+-                        } catch (CommandException e) {
+-                            cmdCtx.getConsole().getError().println(e.getMessage());
+-                            String msg = t.localize(LocaleResources.ADDING_USER_FAILED).getContents();
+-                            cmdCtx.getConsole().getError().println(msg);
+-                        }
+-                        break;
+-                    case FAIL:
+-                        // nothing
+-                        break;
+-                    default:
+-                        // nothing
+-                        break;
+-                    }
+-                } catch (CommandException e) {
+-                    cmdCtx.getConsole().getError().println(e.getMessage());
+-                } finally {
+-                    setupFinishedBarrier.countDown();
+-                }
+-            }
+-            
+-        }
+-        
+-        private CommandContext getAddUserCommandContext(final String dbUrl) {
+-            CommandContextFactory factory = new CommandContextFactory(context);
+-            CommandContext ctx = factory.createContext(new Arguments() {
+-                
+-                @Override
+-                public boolean hasArgument(String name) {
+-                    if (name.equals(AddUserCommand.DB_URL_ARG)) {
+-                        return true;
+-                    }
+-                    return false;
+-                }
+-                
+-                @Override
+-                public List<String> getNonOptionArguments() {
+-                    return Collections.emptyList();
+-                }
+-                
+-                @Override
+-                public String getArgument(String name) {
+-                    if (name.equals(AddUserCommand.DB_URL_ARG)) {
+-                        return dbUrl;
+-                    }
+-                    return null;
+-                }
+-            });
+-            return ctx;
+-        }
+-    }
+-    
+-    private static class StorageStoppedListener implements ActionListener<ApplicationState> {
+-
+-        private boolean storageStopPassed;
+-        private final CountDownLatch storageStoppedLatch;
+-        private StorageStoppedListener(CountDownLatch latch) {
+-            storageStoppedLatch = latch;
+-        }
+-        
+-        @Override
+-        public void actionPerformed(ActionEvent<ApplicationState> actionEvent) {
+-            if (actionEvent.getSource() instanceof AbstractStateNotifyingCommand) {
+-                AbstractStateNotifyingCommand storage = (AbstractStateNotifyingCommand) actionEvent.getSource();
+-                // remove ourselves so that we get called more than once.
+-                storage.getNotifier().removeActionListener(this);
+-                switch(actionEvent.getActionId()) {
+-                case STOP:
+-                    storageStopPassed = true;
+-                    storageStoppedLatch.countDown();
+-                    break;
+-                default:
+-                    storageStoppedLatch.countDown();
+-                    break;
+-                
+-                }
+-            }
+-        }
+-        
+-    }
+-}
+diff --git a/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandDispatcherTest.java b/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandDispatcherTest.java
+deleted file mode 100644
+--- a/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandDispatcherTest.java
++++ /dev/null
+@@ -1,119 +0,0 @@
+-/*
+- * Copyright 2012-2014 Red Hat, Inc.
+- *
+- * This file is part of Thermostat.
+- *
+- * Thermostat is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published
+- * by the Free Software Foundation; either version 2, or (at your
+- * option) any later version.
+- *
+- * Thermostat is distributed in the hope that it will be useful, but
+- * WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with Thermostat; see the file COPYING.  If not see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * Linking this code with other modules is making a combined work
+- * based on this code.  Thus, the terms and conditions of the GNU
+- * General Public License cover the whole combination.
+- *
+- * As a special exception, the copyright holders of this code give
+- * you permission to link this code with independent modules to
+- * produce an executable, regardless of the license terms of these
+- * independent modules, and to copy and distribute the resulting
+- * executable under terms of your choice, provided that you also
+- * meet, for each linked independent module, the terms and conditions
+- * of the license of that module.  An independent module is a module
+- * which is not derived from or based on this code.  If you modify
+- * this code, you may extend this exception to your version of the
+- * library, but you are not obligated to do so.  If you do not wish
+- * to do so, delete this exception statement from your version.
+- */
+-
+-package com.redhat.thermostat.storage.mongodb.internal;
+-
+-import static org.junit.Assert.assertEquals;
+-import static org.junit.Assert.assertTrue;
+-import static org.junit.Assert.fail;
+-import static org.mockito.Matchers.eq;
+-import static org.mockito.Matchers.any;
+-import static org.mockito.Mockito.mock;
+-import static org.mockito.Mockito.when;
+-
+-import org.junit.Test;
+-import org.osgi.framework.BundleContext;
+-
+-import com.redhat.thermostat.common.cli.Arguments;
+-import com.redhat.thermostat.common.cli.CommandContext;
+-import com.redhat.thermostat.common.cli.CommandContextFactory;
+-import com.redhat.thermostat.common.cli.CommandException;
+-
+-public class AddUserCommandDispatcherTest {
+-
+-    @Test
+-    public void canRunUndecorated() {
+-        BundleContext context = mock(BundleContext.class);
+-        BaseAddUserCommand mockCmd = mock(BaseAddUserCommand.class);
+-        AddUserCommandDispatcher dispatcher = new AddUserCommandDispatcher(context, mockCmd);
+-        CommandContextFactory factory = new CommandContextFactory(context);
+-        Arguments args = mock(Arguments.class);
+-        when(args.hasArgument(eq("dbUrl"))).thenReturn(true);
+-        CommandContext ctx = factory.createContext(args);
+-        
+-        // This should not throw any exception
+-        try {
+-            dispatcher.run(ctx);
+-        } catch (CommandException e) {
+-            fail(e.getMessage());
+-        }
+-    }
+-    
+-    @Test(expected = CommandException.class )
+-    public void failsToRunWithNoArguments() throws CommandException {
+-        BundleContext context = mock(BundleContext.class);
+-        BaseAddUserCommand mockCmd = mock(BaseAddUserCommand.class);
+-        AddUserCommandDispatcher dispatcher = new AddUserCommandDispatcher(context, mockCmd);
+-        CommandContextFactory factory = new CommandContextFactory(context);
+-        Arguments args = mock(Arguments.class);
+-        when(args.hasArgument(any(String.class))).thenReturn(false);
+-        CommandContext ctx = factory.createContext(args);
+-        
+-        // this throws CommandException
+-        dispatcher.run(ctx);
+-    }
+-    
+-    @Test
+-    public void decoratesIfStorageStartOptionGiven() {
+-        BundleContext context = mock(BundleContext.class);
+-        BaseAddUserCommand mockCmd = mock(BaseAddUserCommand.class);
+-        AddUserCommandDispatcher dispatcher = new AddUserCommandDispatcher(context, mockCmd);
+-        CommandContextFactory factory = new CommandContextFactory(context);
+-        Arguments args = mock(Arguments.class);
+-        when(args.hasArgument(eq("startStorage"))).thenReturn(true);
+-        CommandContext ctx = factory.createContext(args);
+-        
+-        try {
+-            dispatcher.run(ctx);
+-            fail("CommonPaths not available, should have thrown exception");
+-        } catch (CommandException e) {
+-            boolean passed = false;
+-            for( StackTraceElement elmt: e.getStackTrace()) {
+-                // StartStopAddUserCommandDecorator should be in stack trace
+-                if (elmt.getClassName().equals(StartStopAddUserCommandDecorator.class.getName())) {
+-                    passed = true;
+-                    break;
+-                }
+-            }
+-            assertTrue("Expected mocked BaseAddUserCommand to be decorated", passed);
+-        }
+-    }
+-    
+-    @Test
+-    public void testCommandName() {
+-        assertEquals("add-mongodb-user", AddUserCommandDispatcher.COMMAND_NAME);
+-    }
+-}
+diff --git a/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandTest.java b/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandTest.java
+deleted file mode 100644
+--- a/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/AddUserCommandTest.java
++++ /dev/null
+@@ -1,116 +0,0 @@
+-/*
+- * Copyright 2012-2014 Red Hat, Inc.
+- *
+- * This file is part of Thermostat.
+- *
+- * Thermostat is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published
+- * by the Free Software Foundation; either version 2, or (at your
+- * option) any later version.
+- *
+- * Thermostat is distributed in the hope that it will be useful, but
+- * WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with Thermostat; see the file COPYING.  If not see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * Linking this code with other modules is making a combined work
+- * based on this code.  Thus, the terms and conditions of the GNU
+- * General Public License cover the whole combination.
+- *
+- * As a special exception, the copyright holders of this code give
+- * you permission to link this code with independent modules to
+- * produce an executable, regardless of the license terms of these
+- * independent modules, and to copy and distribute the resulting
+- * executable under terms of your choice, provided that you also
+- * meet, for each linked independent module, the terms and conditions
+- * of the license of that module.  An independent module is a module
+- * which is not derived from or based on this code.  If you modify
+- * this code, you may extend this exception to your version of the
+- * library, but you are not obligated to do so.  If you do not wish
+- * to do so, delete this exception statement from your version.
+- */
+-
+-package com.redhat.thermostat.storage.mongodb.internal;
+-
+-import static org.junit.Assert.assertSame;
+-import static org.junit.Assert.assertTrue;
+-import static org.mockito.Mockito.inOrder;
+-import static org.mockito.Mockito.mock;
+-import static org.mockito.Mockito.when;
+-
+-import java.util.Arrays;
+-import java.util.concurrent.CountDownLatch;
+-
+-import org.junit.Test;
+-import org.junit.runner.RunWith;
+-import org.mockito.InOrder;
+-import org.powermock.api.mockito.PowerMockito;
+-import org.powermock.core.classloader.annotations.PowerMockIgnore;
+-import org.powermock.core.classloader.annotations.PrepareForTest;
+-import org.powermock.modules.junit4.PowerMockRunner;
+-
+-import com.mongodb.DB;
+-import com.redhat.thermostat.storage.core.QueuedStorage;
+-import com.redhat.thermostat.storage.core.Storage;
+-import com.redhat.thermostat.storage.core.StorageCredentials;
+-
+-//There is a bug (resolved as wontfix) in powermock which results in
+-//java.lang.LinkageError if javax.management.* classes aren't ignored by
+-//Powermock. More here: http://code.google.com/p/powermock/issues/detail?id=277
+-//SSL tests need this and having that annotation on method level doesn't seem
+-//to solve the issue.
+-@PowerMockIgnore( {"javax.management.*"})
+-@RunWith(PowerMockRunner.class)
+-@PrepareForTest({ DB.class })
+-public class AddUserCommandTest {
+-
+-    /*
+-     * Verifies that credentials' methods are called in the right order and
+-     * the password array is filled with zeros after use.
+-     */
+-    @Test
+-    public void verifyAddUser() {
+-        DB db = PowerMockito.mock(DB.class);
+-        CountDownLatch latch = new CountDownLatch(1);
+-        MongoStorage storage = new MongoStorage(db, latch);
+-        
+-        StorageCredentials creds = mock(StorageCredentials.class);
+-        String username = "fooUser";
+-        char[] password = new char[] { 'f', 'o', 'o' };
+-        when(creds.getUsername()).thenReturn(username);
+-        when(creds.getPassword()).thenReturn(password);
+-        InOrder inOrder = inOrder(creds);
+-        
+-        AddUserCommand command = new AddUserCommand(null /* unused */);
+-        command.addUser(storage, creds);
+-        
+-        // password should have been zero-filled
+-        assertTrue(Arrays.equals(new char[] { '\0', '\0', '\0' }, password));
+-        // First username, then password should get called.
+-        inOrder.verify(creds).getUsername();
+-        inOrder.verify(creds).getPassword();
+-    }
+-    
+-    /*
+-     * Verifies if the delegate can be retrieved from QueuedStorage since
+-     * AddUserCommand relies on this. In particular the delegate needs to be
+-     * a MongoStorage instance.
+-     */
+-    @Test
+-    public void verifyGettingDelegateWorks() {
+-        DB db = PowerMockito.mock(DB.class);
+-        CountDownLatch latch = new CountDownLatch(1);
+-        // Delegate must be mongostorage
+-        MongoStorage storage = new MongoStorage(db, latch);
+-        
+-        QueuedStorage qStorage = new QueuedStorage(storage);
+-        AddUserCommand command = new AddUserCommand(null /* unused */);
+-        Storage actual = command.getDelegate(qStorage);
+-        
+-        assertSame(storage, actual);
+-    }
+-}
+diff --git a/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/BaseAddUserCommandTest.java b/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/BaseAddUserCommandTest.java
+deleted file mode 100644
+--- a/storage/mongo/src/test/java/com/redhat/thermostat/storage/mongodb/internal/BaseAddUserCommandTest.java
++++ /dev/null
+@@ -1,62 +0,0 @@
+-/*
+- * Copyright 2012-2014 Red Hat, Inc.
+- *
+- * This file is part of Thermostat.
+- *
+- * Thermostat is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published
+- * by the Free Software Foundation; either version 2, or (at your
+- * option) any later version.
+- *
+- * Thermostat is distributed in the hope that it will be useful, but
+- * WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with Thermostat; see the file COPYING.  If not see
+- * <http://www.gnu.org/licenses/>.
+- *
+- * Linking this code with other modules is making a combined work
+- * based on this code.  Thus, the terms and conditions of the GNU
+- * General Public License cover the whole combination.
+- *
+- * As a special exception, the copyright holders of this code give
+- * you permission to link this code with independent modules to
+- * produce an executable, regardless of the license terms of these
+- * independent modules, and to copy and distribute the resulting
+- * executable under terms of your choice, provided that you also
+- * meet, for each linked independent module, the terms and conditions
+- * of the license of that module.  An independent module is a module
+- * which is not derived from or based on this code.  If you modify
+- * this code, you may extend this exception to your version of the
+- * library, but you are not obligated to do so.  If you do not wish
+- * to do so, delete this exception statement from your version.
+- */
+-
+-package com.redhat.thermostat.storage.mongodb.internal;
+-
+-import static org.junit.Assert.assertFalse;
+-
+-import org.junit.Test;
+-
+-import com.redhat.thermostat.common.cli.CommandContext;
+-import com.redhat.thermostat.common.cli.CommandException;
+-
+-public class BaseAddUserCommandTest {
+-
+-    @Test
+-    public void storageRequiredFalse() {
+-        TestAddUserCommand cmd = new TestAddUserCommand();
+-        assertFalse(cmd.isStorageRequired());
+-    }
+-    
+-    private static class TestAddUserCommand extends BaseAddUserCommand {
+-
+-        @Override
+-        public void run(CommandContext ctx) throws CommandException {
+-            // no-op
+-        }
+-        
+-    }
+-}

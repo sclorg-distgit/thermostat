@@ -1,0 +1,469 @@
+diff --git a/distribution/scripts/thermostat-setup b/distribution/scripts/thermostat-setup
+--- a/distribution/scripts/thermostat-setup
++++ b/distribution/scripts/thermostat-setup
+@@ -122,7 +122,6 @@
+   # in this script already, but failed somewhere
+   # down the line.
+   removeTempStampFile
+-  cleanupSedFiles
+   echo 'Thermostat setup failed!' 1>&2
+   stty "$tty_flags"
+   exit 1
+@@ -137,18 +136,10 @@
+   fi
+ }
+ 
+-cleanupSedFiles() {
+-  if [ ! -z "$SED_FILES_DIR" ] && 
+-     [ -e $SED_FILES_DIR ]; then
+-    rm -rf "$SED_FILES_DIR"
+-  fi
+-}
+-
+ exitSuccess() {
+   # Remove temporary unlock file and create the actual setup-complete
+   # file.
+   removeTempStampFile
+-  cleanupSedFiles
+   echo $SETUP_UNLOCK_CONTENT_REGULAR > "$SETUP_COMPLETE_FILE"
+   echo -e "\nThermostat setup complete!\n"
+   echo -e "Be sure to configure thermostat-users.properties and"
+@@ -206,45 +197,19 @@
+     default_webapp="$THERMOSTAT_HOME/webapp"
+     THERMOSTAT_WEBAPP_LOCATION="$(readlink -f $default_webapp)"
+   fi
+-  TH_WEB_INF="$THERMOSTAT_WEBAPP_LOCATION/WEB-INF/web.xml"
++  TH_WEB_INF="$THERMOSTAT_WEBAPP_LOCATION/WEB-INF/web.auth"
+   
+   if [ ! -e $TH_WEB_INF ]; then
+     echo "File not found: $TH_WEB_INF" 1>&2
+     exitFail
+   fi
+ 
+-  # We use this var for cleaning up after sed has run and
+-  # the script exits.
+-  SED_FILES_DIR="$(mktemp -d)"
+-  setSedExprs "storage.username" "$USERNAME"
+-  writeSedFiles "$SED_FILES_DIR" "storage.username"
+-  SED_CMD_USER1="sed -i -f $SED_FILE_UNCOMMENTED $TH_WEB_INF"
+-  SED_CMD_USER2="sed -i -f $SED_FILE_COMMENTED $TH_WEB_INF"
+-
+-  setSedExprs "storage.password" "$PASSWORD"
+-  writeSedFiles "$SED_FILES_DIR" "storage.password"
+-  SED_CMD_PWD1="sed -i -f $SED_FILE_UNCOMMENTED $TH_WEB_INF"
+-  SED_CMD_PWD2="sed -i -f $SED_FILE_COMMENTED $TH_WEB_INF"
+-
+   if [ ! -w $TH_WEB_INF ]; then
+-    local sed_one_line_user="$SED_CMD_USER1 && $SED_CMD_USER2"
+-    local sed_one_line_pwd="$SED_CMD_PWD1 && $SED_CMD_PWD2"
+     echo -e "\n\nWARNING: $(readlink -f $TH_WEB_INF) is NOT writable.\n"
+-    echo -e "You have the following options:\n"
+-    echo -e "  1. Run the following command(s) as root:"
+-    echo -e "     #> $sed_one_line_user"
+-    echo -e "     #> $sed_one_line_pwd"
+-    echo -e "     #> rm -r $SED_FILES_DIR"
+-    echo -e "  2. Modify the file manually and add the following"
+-    echo -e "     credentials config snippet (in 'servlet'):"
+-    echo -e "     <init-param>"
+-    echo -e "       <param-name>storage.username</param-name>"
+-    echo -e "       <param-value>$USERNAME</param-value>"
+-    echo -e "     </init-param>"
+-    echo -e "     <init-param>"
+-    echo -e "       <param-name>storage.password</param-name>"
+-    echo -e "       <param-value>$PASSWORD</param-value>"
+-    echo -e "     </init-param>"
++    echo -e "     Modify the file manually and add the following"
++    echo -e "     credentials config snippet:"
++    echo -e "     storage.username = $USERNAME"
++    echo -e "     storage.password = $PASSWORD"
+     echo -e "     The file in which you need to put this snippet"
+     echo -e "     is:"
+     echo -e "     $TH_WEB_INF"
+@@ -252,9 +217,9 @@
+   else
+     # Run the sed command(s)
+     local sedSuccess=0
+-    $SED_CMD_USER1 && $SED_CMD_USER2
++    echo "storage.username = $USERNAME" > "$TH_WEB_INF"
+     sedSuccess=$(( $sedSuccess + $? ))
+-    $SED_CMD_PWD1 && $SED_CMD_PWD2
++    echo "storage.password = $PASSWORD" >> "$TH_WEB_INF"
+     sedSuccess=$(( $sedSuccess + $? ))
+     if [ $sedSuccess -eq 0 ]; then
+       exitSuccess
+@@ -265,109 +230,6 @@
+   fi
+ }
+ 
+-writeSedFiles() {
+-  local tmpDir="$1"
+-  local paramName="$2"
+-  SED_FILE_UNCOMMENTED="$tmpDir/uncommented-${paramName}.sed"
+-  SED_FILE_COMMENTED="$tmpDir/commented-${paramName}.sed"
+-  echo "$SED_EXPR_COMMENTED" > $SED_FILE_COMMENTED
+-  echo "$SED_EXPR_UNCOMMENTED" > $SED_FILE_UNCOMMENTED
+-}
+-
+-setSedExprs() {
+-  local paramName=$1
+-  local paramVal=$2
+-  setSedExprUnCommented "$paramName" "$paramVal"
+-  setSedExprCommented "$paramName" "$paramVal"
+-}
+-
+-setSedExprCommented() {
+-  local paramName=$1
+-  local paramVal=$2
+-  SED_EXPR_COMMENTED="
+-  # Finds pattern A and replaces it with B.
+-  #
+-  # Pattern A is something like the following:
+-  #   <!--
+-  #   <init-param>
+-  #     <param-name>storage.username</param-name>
+-  #     <param-value>something</param-value>
+-  #   </init-param>
+-  #   -->
+-  #
+-  # Replacement (B) would then be:
+-  #
+-  # <init-param>
+-  #   <param-name>storage.username</param-name>
+-  #   <param-value>foo-bar</param-value>
+-  # </init-param>
+-  #
+-  # In essence it removes the comments and sets
+-  # the param value we want.
+-  #
+-  /<[!]--/ {
+-    N
+-    /<init-param>/ {
+-      N
+-      /<param-name>$paramName<[/]param-name>/ {
+-        N
+-        /<param-value>.*<[/]param-value>/ {
+-          N
+-          /<[/]init-param>/ {
+-            N
+-            /-->/ {
+-              N
+-              # Do the substitution with all matching lines in
+-              # current buffer
+-              s%.*<[!]--\n.*<init-param>\n.*<param-name>$paramName<[/]param-name>\n.*<param-value>.*<[/]param-value>.*<[/]init-param>.*-->%<init-param>\n<param-name>$paramName</param-name>\n<param-value>$paramVal</param-value>\n</init-param>%
+-            }
+-          }
+-        }
+-      }
+-    }
+-  }"
+-}
+-
+-setSedExprUnCommented() {
+-  paramName=$1
+-  paramVal=$2
+-  SED_EXPR_UNCOMMENTED="
+-  # Finds pattern C and replaces it with D.
+-  #
+-  # Pattern C is something like the following:
+-  #   <init-param>
+-  #     <param-name>storage.username</param-name>
+-  #     <param-value>something</param-value>
+-  #   </init-param>
+-  #
+-  # Replacement (D) would then be:
+-  #
+-  # <init-param>
+-  #   <param-name>storage.username</param-name>
+-  #   <param-value>foo-bar</param-value>
+-  # </init-param>
+-  #
+-  # I.e. it changes the username to what we'd
+-  # like it to be. If that section is already
+-  # in place (not commented out)
+-  #
+-  /<init-param>/ {
+-    N
+-    /<param-name>$paramName<[/]param-name>/ {
+-      N
+-      /<param-value>.*<[/]param-value>/ {
+-        N
+-        /<[/]init-param>/ {
+-          N
+-          # Do the substitution with all matching lines in
+-          # current buffer
+-          s%.*<init-param>\n.*<param-name>$paramName<[/]param-name>\n.*<param-value>.*<[/]param-value>.*<[/]init-param>%<init-param>\n<param-name>$paramName</param-name>\n<param-value>$paramVal</param-value>\n</init-param>%
+-        }
+-      }
+-    }
+-  }"
+-}
+-
+ readUsername() {
+   dUsername="$1"
+   prompt="Please enter the desired Mongodb username (press return in order to use '$dUsername'): "
+diff --git a/pom.xml b/pom.xml
+--- a/pom.xml
++++ b/pom.xml
+@@ -98,17 +98,11 @@
+         <mongodb.dev.password> mongodevpassword </mongodb.dev.password>
+         <!-- used in web.xml of the war artifact -->
+         <web.war.backingstorage.username.snippet>
+-            &lt;init-param&gt;
+-              &lt;param-name>storage.username&lt;/param-name&gt;
+-              &lt;param-value>${mongodb.dev.username}&lt;/param-value&gt;
+-            &lt;/init-param&gt;
++storage.username=${mongodb.dev.username}
+         </web.war.backingstorage.username.snippet>
+         <!-- used in web.xml of the war artifact -->
+         <web.war.backingstorage.password.snippet>
+-            &lt;init-param&gt;
+-              &lt;param-name>storage.password&lt;/param-name&gt;
+-              &lt;param-value>${mongodb.dev.password}&lt;/param-value&gt;
+-            &lt;/init-param&gt;
++storage.password=${mongodb.dev.password}
+         </web.war.backingstorage.password.snippet>
+         <!--
+              Used in thermostat-users.properties. We define two users.
+@@ -273,21 +267,11 @@
+ 
+     <!-- used in web.xml of the war artifact -->
+     <web.war.backingstorage.username.snippet>
+-        &lt;!--
+-        &lt;init-param&gt;
+-          &lt;param-name>storage.username&lt;/param-name&gt;
+-          &lt;param-value>thermostat-mongodb-user&lt;/param-value&gt;
+-        &lt;/init-param&gt;
+-        --&gt;
++#storage.username=thermostat-mongodb-user
+     </web.war.backingstorage.username.snippet>
+     <!-- used in web.xml of the war artifact -->
+     <web.war.backingstorage.password.snippet>
+-        &lt;!--
+-        &lt;init-param&gt;
+-          &lt;param-name>storage.password&lt;/param-name&gt;
+-          &lt;param-value>supersecrit&lt;/param-value&gt;
+-        &lt;/init-param&gt;
+-        --&gt;
++#storage.password=supersecrit
+     </web.war.backingstorage.password.snippet>
+     <!--
+          Used in thermostat-users.properties and
+diff --git a/web/server/src/main/java/com/redhat/thermostat/web/server/FileBasedStorageCredentials.java b/web/server/src/main/java/com/redhat/thermostat/web/server/FileBasedStorageCredentials.java
+new file mode 100644
+--- /dev/null
++++ b/web/server/src/main/java/com/redhat/thermostat/web/server/FileBasedStorageCredentials.java
+@@ -0,0 +1,89 @@
++/*
++ * Copyright 2012-2015 Red Hat, Inc.
++ *
++ * This file is part of Thermostat.
++ *
++ * Thermostat is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published
++ * by the Free Software Foundation; either version 2, or (at your
++ * option) any later version.
++ *
++ * Thermostat is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with Thermostat; see the file COPYING.  If not see
++ * <http://www.gnu.org/licenses/>.
++ *
++ * Linking this code with other modules is making a combined work
++ * based on this code.  Thus, the terms and conditions of the GNU
++ * General Public License cover the whole combination.
++ *
++ * As a special exception, the copyright holders of this code give
++ * you permission to link this code with independent modules to
++ * produce an executable, regardless of the license terms of these
++ * independent modules, and to copy and distribute the resulting
++ * executable under terms of your choice, provided that you also
++ * meet, for each linked independent module, the terms and conditions
++ * of the license of that module.  An independent module is a module
++ * which is not derived from or based on this code.  If you modify
++ * this code, you may extend this exception to your version of the
++ * library, but you are not obligated to do so.  If you do not wish
++ * to do so, delete this exception statement from your version.
++ */
++
++package com.redhat.thermostat.web.server;
++
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.IOException;
++import java.io.InputStream;
++import java.util.Properties;
++import java.util.logging.Level;
++import java.util.logging.Logger;
++
++import com.redhat.thermostat.common.utils.LoggingUtils;
++import com.redhat.thermostat.storage.core.StorageCredentials;
++
++public class FileBasedStorageCredentials implements StorageCredentials {
++
++    private static final Logger logger = LoggingUtils.getLogger(FileBasedStorageCredentials.class);
++
++    // authentication tokens
++    public static final String STORAGE_USERNAME = "storage.username";
++    public static final String STORAGE_PASSWORD = "storage.password";
++
++    private Properties props;
++
++    public FileBasedStorageCredentials(File file) {
++        try (InputStream in = new FileInputStream(file)) {
++            initialize(in);
++        } catch (IOException e) {
++            logger.log(Level.WARNING, "Unable to read " + file);
++        }
++
++    }
++
++    public FileBasedStorageCredentials(InputStream in) throws IOException {
++        initialize(in);
++    }
++
++    private void initialize(InputStream in) throws IOException {
++        props = new Properties();
++        props.load(in);
++    }
++
++    @Override
++    public String getUsername() {
++        return props.getProperty(STORAGE_USERNAME, "");
++    }
++
++    @Override
++    public char[] getPassword() {
++        // FIXME Password as string?  bad.
++        return props.getProperty(STORAGE_PASSWORD, "").toCharArray();
++    }
++
++}
+diff --git a/web/server/src/main/java/com/redhat/thermostat/web/server/WebStorageEndPoint.java b/web/server/src/main/java/com/redhat/thermostat/web/server/WebStorageEndPoint.java
+--- a/web/server/src/main/java/com/redhat/thermostat/web/server/WebStorageEndPoint.java
++++ b/web/server/src/main/java/com/redhat/thermostat/web/server/WebStorageEndPoint.java
+@@ -37,6 +37,7 @@
+ package com.redhat.thermostat.web.server;
+ 
+ import java.io.File;
++import java.io.FileInputStream;
+ import java.io.IOException;
+ import java.io.InputStream;
+ import java.io.OutputStream;
+@@ -148,8 +149,6 @@
+     private CommonPaths paths;
+ 
+     public static final String STORAGE_ENDPOINT = "storage.endpoint";
+-    public static final String STORAGE_USERNAME = "storage.username";
+-    public static final String STORAGE_PASSWORD = "storage.password";
+     public static final String STORAGE_CLASS = "storage.class";
+     
+     // read-only set of all known statement descriptors we trust and allow
+@@ -244,24 +243,26 @@
+     @Override
+     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
+         if (storage == null) {
++            StorageCredentials creds = null;
++            final String CREDENTIALS_FILE = "web.auth";
++            // this assumes this is always an exploded war
++            File systemFile = new File(getServletContext().getRealPath("/WEB-INF/" + CREDENTIALS_FILE));
++            if (systemFile.exists() && systemFile.canRead()) {
++                logger.log(Level.CONFIG, "Loading authentication data from WEB-INF/" + CREDENTIALS_FILE);
++                try (InputStream in = new FileInputStream(systemFile)) {
++                    creds = new FileBasedStorageCredentials(in);
++                }
++            } else {
++                File userCredentials = new File(paths.getUserConfigurationDirectory(), CREDENTIALS_FILE);
++                logger.log(Level.CONFIG, "Loading authentication data from " + userCredentials);
++                if (userCredentials.isFile() && userCredentials.canRead()) {
++                    creds = new FileBasedStorageCredentials(userCredentials);
++                } else {
++                    logger.warning("Unable to read database credentials from " + userCredentials);
++                }
++            }
+             String storageClass = getServletConfig().getInitParameter(STORAGE_CLASS);
+             String storageEndpoint = getServletConfig().getInitParameter(STORAGE_ENDPOINT);
+-            final String username = getServletConfig().getInitParameter(STORAGE_USERNAME);
+-            // FIXME Password as string?  bad.
+-            final String password = getServletConfig().getInitParameter(STORAGE_PASSWORD);
+-            StorageCredentials creds = new StorageCredentials() {
+-
+-                @Override
+-                public String getUsername() {
+-                    return username;
+-                }
+-
+-                @Override
+-                public char[] getPassword() {
+-                    return password == null ? null : password.toCharArray();
+-                }
+-                
+-            };
+             storage = StorageFactory.getStorage(storageClass, storageEndpoint, paths, creds);
+         }
+         String uri = req.getRequestURI();
+diff --git a/web/war/pom.xml b/web/war/pom.xml
+--- a/web/war/pom.xml
++++ b/web/war/pom.xml
+@@ -215,13 +215,13 @@
+               <goal>exploded</goal>
+             </goals>
+             <configuration>
+-              <!-- web.xml contains properties, which we'd like to have interpolated -->
+               <webResources>
+                 <resource>
+                   <filtering>true</filtering>
+                   <directory>src/main/webapp</directory>
+                   <includes>
+                     <include>**/web.xml</include>
++                    <include>**/web.auth</include>
+                   </includes>
+                 </resource>
+               </webResources>
+@@ -244,6 +244,7 @@
+                   <directory>src/main/webapp</directory>
+                   <includes>
+                     <include>**/web.xml</include>
++                    <include>**/web.auth</include>
+                   </includes>
+                 </resource>
+               </webResources>
+diff --git a/web/war/src/main/webapp/WEB-INF/web.auth b/web/war/src/main/webapp/WEB-INF/web.auth
+new file mode 100644
+--- /dev/null
++++ b/web/war/src/main/webapp/WEB-INF/web.auth
+@@ -0,0 +1,11 @@
++# Credentials to use for connecting to the backing storage
++# (currently mongodb). Uncomment the following two blocks in
++# order to use this username/password for the connection.
++
++# Username to use for connecting to the backing storage
++# implementation
++${web.war.backingstorage.username.snippet}
++
++# Password to use for connecting to the backing storage
++# implementation
++${web.war.backingstorage.password.snippet}
+diff --git a/web/war/src/main/webapp/WEB-INF/web.xml b/web/war/src/main/webapp/WEB-INF/web.xml
+--- a/web/war/src/main/webapp/WEB-INF/web.xml
++++ b/web/war/src/main/webapp/WEB-INF/web.xml
+@@ -52,16 +52,6 @@
+       <param-name>storage.endpoint</param-name>
+       <param-value>mongodb://127.0.0.1:27518</param-value>
+     </init-param>
+-    <!-- Credentials to use for connecting to the backing storage
+-         (currently mongodb). Uncomment the following two blocks in
+-         order to use this username/password for the connection. -->
+-
+-    <!-- Username to use for connecting to the backing storage
+-         implementation. -->
+-    ${web.war.backingstorage.username.snippet}
+-    <!-- Password to use for connecting to the backing storage
+-         implementation -->
+-    ${web.war.backingstorage.password.snippet}
+     <!-- The timeout of the token manager in ms -->
+     <init-param>
+       <param-name>token-manager-timeout</param-name>
