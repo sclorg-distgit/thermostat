@@ -1,9 +1,10 @@
 # Thermostat version
 %global major        1
-%global minor        2
-%global patchlevel   0
+%global minor        4
+%global patchlevel   4
 # Real OSGi Bundle-Version is 3.6.6.Final
 %global netty_bundle_version       3.6.3
+%global asm_version                5
 %global jcommon_bundle_version     1.0.18
 %global jfreechart_bundle_version  1.0.14
 # apache-commons-beanutils
@@ -19,6 +20,7 @@
 %global hc_core_bundle_version     4.3.3
 %global hc_client_bundle_version   4.3.6
 %global gson_bundle_version        2.2.2
+%global jgraphx_bundle_version     3.1.2
 
 # Flag set to 1 if it's an SCL build. 0 otherwise.
 %global is_scl_build %( test -n "$(rpm --eval '%{?scl}')" && echo 1 || echo 0)
@@ -90,7 +92,7 @@ Version:    %{major}.%{minor}.%{patchlevel}
 # 60.X where X is an increasing int. 60 for rhel-6. We use
 # 70.X for rhel-7. For some reason we cannot rely on the
 # dist tag.
-Release:    60.10%{?dist}
+Release:    60.1%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -126,31 +128,16 @@ Patch1:     osgi_spec_fixes.patch
 Patch2:     ignore_bundle_versions.patch
 # Not suitable for upstream.  Different OSGi version means some API compat issues.
 Patch3:     osgi_api_fixes.patch
-# FIXME remove when upstream supports mongodb 2.6 ootb.
-Patch4:     mongodb26_setup_changes.patch
-# Ditto (command does not work with 2.6)
-Patch5:     remove_adduser_command.patch
-# FIXME: remove once rebased to >= 1.2.4 Upstream commit:
-# http://icedtea.classpath.org/hg/release/thermostat-1.2/rev/0f250b6c47e8
-Patch6:     fix_lucene_symbolic_name.patch
-# FIXME: remove once rebased to >= 1.2.4, RHBZ#1199581, Upstream commit:
-# http://icedtea.classpath.org/hg/release/thermostat-1.2/rev/1cfebde69814
-Patch7:     thermostat_setup_ctrl_c.patch
-# Set USER_THERMOSTAT_HOME default to ~/.thermostat-1.2 since this allows
-# for better data migration from 1.0 Thermostat.
-Patch8:     user_thermostat_home_new_default.patch
+# Set USER_THERMOSTAT_HOME default to ~/.thermostat-1.4 since this allows
+# for better data migration from 1.0/1.2 Thermostat (if any).
+Patch4:     user_thermostat_home_new_default.patch
 # jetty provides the javax.servlet API
-Patch9:     servlet_api_jar.patch
-# Allow 'thermostat web-storage-service' to read configs from
-# ~/.thermostat, by using a custom jaas config.
-Patch10:    webstorage_service_custom_jaas.patch
-# Remove when this lands in a release:
-# http://icedtea.classpath.org/hg/thermostat/rev/296194a48778
-Patch11:    non_existent_bundle.patch
-# Upstream puts passwords in a world-readable location
-Patch12:    rhbz1221989.patch
+Patch5:     servlet_api_jar.patch
 
 BuildRequires: gnome-keyring-devel
+BuildRequires: autoconf
+BuildRequires: automake
+BuildRequires: libtool
 # laf-utils JNI need pkconfig files for gtk2+
 BuildRequires: gtk2-devel
 # Use tomcat only for web storage
@@ -166,6 +153,7 @@ BuildRequires: %{?scl_prefix}jfreechart >= 1.0.14-7
 BuildRequires: %{?scl_prefix}jcommon >= 1.0.17-4
 BuildRequires: %{?scl_prefix}netty
 BuildRequires: %{?scl_prefix}apache-commons-fileupload
+BuildRequires: %{?scl_prefix}jgraphx >= 3.1.2
 
 # rh-java-common collection dependencies
 BuildRequires: rh-java-common-apache-commons-beanutils
@@ -218,6 +206,7 @@ Requires: rh-mongodb26-mongodb-server
 Requires: %{?scl_prefix}jline2
 Requires: %{?scl_prefix}jfreechart
 Requires: %{?scl_prefix}netty
+Requires: %{?scl_prefix}jgraphx >= 3.1.2
 Requires: rh-java-common-lucene
 Requires: rh-java-common-lucene-analysis
 Requires: rh-java-common-httpcomponents-client
@@ -300,13 +289,6 @@ for Thermostat's Web layer.
 %patch3 -p1
 %patch4 -p1
 %patch5 -p1
-%patch6 -p1
-%patch7 -p1
-%patch8 -p1
-%patch9 -p1
-%patch10 -p1
-%patch11 -p1
-%patch12 -p1
 
 # Fix up artifact names which have different name upstream
 #  lucene
@@ -318,6 +300,8 @@ for Thermostat's Web layer.
 %pom_add_dep "org.apache.lucene:lucene-analyzers:4.8.0" vm-heap-analysis/distribution
 %pom_add_dep "org.apache.lucene:lucene-core:4.8.0" vm-heap-analysis/common
 %pom_add_dep "org.apache.lucene:lucene-core:4.8.0" vm-heap-analysis/distribution
+# Fix up artifact names for jgraphx
+%pom_change_dep -r "org.tinyjee.jgraphx:jgraphx" "com.mxgraph:jgraphx"
 #  httpclient
 %pom_remove_dep org.apache.httpcomponents:httpclient-osgi web/client
 %pom_add_dep org.apache.httpcomponents:httpclient:4.1.2 web/client
@@ -359,6 +343,7 @@ for Thermostat's Web layer.
 %pom_remove_dep com.redhat.thermostat:thermostat-storage-testutils vm-cpu/common
 %pom_remove_dep com.redhat.thermostat:thermostat-storage-testutils vm-profiler/common
 %pom_remove_dep com.redhat.thermostat:thermostat-storage-testutils thread/collector
+%pom_remove_dep com.redhat.thermostat:thermostat-schema-info-distribution distribution
 
 # Remove depencency on the web archive for web-storage-service we'll make deps
 # available manually
@@ -385,6 +370,8 @@ for Thermostat's Web layer.
 %pom_xpath_remove "pom:dependencies/pom:dependency[pom:groupId='com.sun']/pom:systemPath" vm-heap-analysis/command
 %pom_xpath_remove "pom:dependencies/pom:dependency[pom:groupId='com.sun']/pom:systemPath" vm-heap-analysis/client-swing
 %pom_xpath_remove "pom:dependencies/pom:dependency[pom:groupId='com.sun']/pom:systemPath" vm-heap-analysis/client-core
+# Do not embed jgraphx dependency in thread client.
+%pom_xpath_remove "pom:project/pom:build/pom:plugins/pom:plugin[pom:artifactId='maven-bundle-plugin']/pom:configuration/pom:instructions/pom:Embed-Dependency" thread/client-swing
 
 # Don't install the zip files created during the build
 %mvn_package com.redhat.thermostat::zip: __noinstall
@@ -446,6 +433,8 @@ pushd keyring
            src/main/java/com/redhat/thermostat/utils/keyring/Keyring.java \
            src/main/java/com/redhat/thermostat/utils/keyring/KeyringException.java \
            src/main/java/com/redhat/thermostat/utils/keyring/impl/KeyringImpl.java
+  autoreconf --install
+  ./configure
   make all
 popd
 pushd agent/core
@@ -473,7 +462,9 @@ rm -rf %{buildroot}/%{_datarootdir}/java/%{?scl_prefix}%{pkg_name}
                  -Dthermostat.web.deploy.dir=$(pwd)/webstorage-webapp \
                  -Dthermostat.system.user=thermostat \
                  -Dthermostat.system.group=thermostat \
+                 -Dthermostat.user.guide="http://icedtea.classpath.org/wiki/Thermostat/RHSCL2.2UserGuide" \
                  -Dnetty.version=%{netty_bundle_version}.Final \
+                 -Dasm.version=%{asm_version} \
                  -Dcommons-logging.version=%{logging_bundle_version} \
                  -Dcommons-collections.version=%{collections_bundle_version} \
                  -Dcommons-codec.osgi-version=%{codec_bundle_version} \
@@ -488,7 +479,8 @@ rm -rf %{buildroot}/%{_datarootdir}/java/%{?scl_prefix}%{pkg_name}
                  -Dlucene-core.bundle.symbolic-name=org.apache.lucene.core \
                  -Dlucene-analysis.bundle.symbolic-name=org.apache.lucene.analysis \
                  -Dosgi.compendium.bundle.symbolic-name=org.osgi.compendium \
-                 -Dosgi.compendium.osgi-version=4.1.0
+                 -Dosgi.compendium.osgi-version=4.1.0 \
+                 -Djgraphx.osgi.version=%{jgraphx_bundle_version}
 
 # the build puts all depdency jars into distribution/target/image/lib as well
 mv distribution/target/image/libs/thermostat-*jar .
@@ -498,9 +490,11 @@ mv thermostat-*jar distribution/target/image/libs/
 # Need Java 7 in in scripts
 sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat
 sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat-agent-proxy
+sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat-command-channel
 # Fix path to tools.jar
 sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat
 sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat-agent-proxy
+sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat-command-channel
 
 # Collect a list of filenames which we later use in order to symlink from /usr/share/java
 pushd distribution/target/image/libs
@@ -548,6 +542,8 @@ mkdir -p %{buildroot}%{system_initrddir}
 mkdir -p %{buildroot}%{_datarootdir}/icons/hicolor/scalable/apps
 # Thermostat desktop lives there
 mkdir -p %{buildroot}%{_datarootdir}/applications
+# Example config files are in docdir
+mkdir -p %{buildroot}%{_docdir}/%{pkg_name}
 
 # Dance the xmvn install limbo. This only makes sense if %mvn_build does NOT
 # have the '-i' switch.
@@ -597,6 +593,22 @@ cp %{SOURCE2} %{buildroot}%{_datarootdir}/icons/hicolor/scalable/apps/%{pkg_name
 mkdir -p %{buildroot}%{system_tmpfilesdir}
 install -m 0644 distribution/target/tmpfiles.d/%{pkg_name}.conf %{buildroot}%{system_tmpfilesdir}/%{pkg_name}.conf
 
+# Install thermostat man page
+mkdir -p %{buildroot}%{_mandir}/man1
+install -m 0644 distribution/docs/%{pkg_name}.1 %{buildroot}%{_mandir}/man1/%{pkg_name}.1
+
+# Install bash completions. Note those won't work on EL 6 unless somebody
+# finds a bash-completion package somewhere (e.g. via EPEL)
+mkdir -p %{buildroot}%{system_root_datadir}/bash-completion/completions
+install -pm 644 distribution/target/image/bin/thermostat-completion %{buildroot}%{system_root_datadir}/bash-completion/completions/%{pkg_name}
+# Add a symlink from the compat directory so that it works for
+# older bash-completion package
+mkdir -p %{buildroot}%{system_confdir}/bash_completion.d
+ln -s %{system_root_datadir}/bash-completion/completions/%{pkg_name} %{buildroot}%{system_confdir}/bash_completion.d/%{pkg_name}
+# Remove it so that the completion file does not show up in the
+# default PATH
+rm distribution/target/image/bin/thermostat-completion
+
 # Don't want dev setup things
 rm distribution/target/image/bin/thermostat-devsetup
 rm distribution/target/image/etc/devsetup.input
@@ -629,6 +641,7 @@ ln -s %{scl_javadir}/netty.jar %{buildroot}%{thermostat_home}/libs/netty.jar
 ln -s %{scl_javadir}/jfreechart.jar %{buildroot}%{thermostat_home}/libs/jfreechart.jar
 ln -s %{scl_javadir}/jcommon.jar %{buildroot}%{thermostat_home}/libs/jcommon.jar
 ln -s %{scl_javadir}/jline2/jline.jar %{buildroot}%{thermostat_home}/libs/jline2.jar
+ln -s %{scl_javadir}/jgraphx/jgraphx.jar %{buildroot}%{thermostat_home}/libs/jgraphx.jar
 # The following are additional downstream specific symlinks for transitive deps
 #   see fix_bundle_loading.patch
 # some of them have their deps embedded upstream (or whatever is available in the maven repos)
@@ -647,7 +660,7 @@ ln -s /opt/rh/rh-java-common/root/usr/share/java/lucene/lucene-analyzers-common.
 
 # set up symlinks for vm-profiler plugin
 rm %{buildroot}%{thermostat_home}/plugins/vm-profiler/asm*jar
-ln -s /opt/rh/rh-java-common/root/usr/share/java/objectweb-asm5/asm-all-5.jar %{buildroot}%{thermostat_home}/libs/asm-all.jar
+ln -s /opt/rh/rh-java-common/root/usr/share/java/objectweb-asm5/asm-all-%{asm_version}.jar %{buildroot}%{thermostat_home}/plugins/vm-profiler/asm-all-%{asm_version}.jar
 
 # set up symlinks for embedded-web-endpoint plugin
 rm %{buildroot}%{thermostat_home}/plugins/embedded-web-endpoint/jetty*jar
@@ -687,7 +700,11 @@ ln -s %{_datarootdir}/%{pkg_name}/bin/thermostat-setup \
 
 # create required config directory
 mkdir -p %{buildroot}%{thermostat_home}/etc/plugins.d/
-# move config files to /etc and symlink stuff under $THERMOSTAT_HOME/etc to it
+# Move config files to /etc and symlink stuff under
+# $THERMOSTAT_HOME/etc to it. Put example configs
+# in docdir.
+mv %{buildroot}%{thermostat_home}/etc/examples \
+   %{buildroot}%{_docdir}/%{pkg_name}/
 mv %{buildroot}%{thermostat_home}/etc/* \
    %{buildroot}%{_sysconfdir}/%{pkg_name}
 rmdir %{buildroot}%{thermostat_home}/etc
@@ -813,9 +830,13 @@ TOOLS_JAR="$(grep 'TOOLS_JAR=' %{buildroot}/%{thermostat_home}/bin/thermostat | 
 test "${TOOLS_JAR}" = "%{jdk_base}/lib/tools.jar"
 TOOLS_JAR="$(grep 'TOOLS_JAR=' %{buildroot}/%{thermostat_home}/bin/thermostat-agent-proxy | cut -d= -f2 | cut -d\" -f2)"
 test "${TOOLS_JAR}" = "%{jdk_base}/lib/tools.jar"
+TOOLS_JAR="$(grep 'TOOLS_JAR=' %{buildroot}/%{thermostat_home}/bin/thermostat-command-channel | cut -d= -f2 | cut -d\" -f2)"
+test "${TOOLS_JAR}" = "%{jdk_base}/lib/tools.jar"
 JAVA="$(grep 'JAVA=' %{buildroot}/%{thermostat_home}/bin/thermostat | cut -d= -f2 | cut -d\" -f2)"
 test "${JAVA}" = "%{jdk_base}/bin/java"
 JAVA="$(grep 'JAVA=' %{buildroot}/%{thermostat_home}/bin/thermostat-agent-proxy | cut -d= -f2 | cut -d\" -f2)"
+test "${JAVA}" = "%{jdk_base}/bin/java"
+JAVA="$(grep 'JAVA=' %{buildroot}/%{thermostat_home}/bin/thermostat-command-channel | cut -d= -f2 | cut -d\" -f2)"
 test "${JAVA}" = "%{jdk_base}/bin/java"
 
 %pre
@@ -863,6 +884,7 @@ fi
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/commands
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/db.properties
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/logging.properties
+%config %{_sysconfdir}/%{pkg_name}/bash-complete-logging.properties
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/plugins.d
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/osgi-export.properties
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/ssl.properties
@@ -882,6 +904,7 @@ fi
 %{_datadir}/%{pkg_name}/plugins/notes
 %{_datadir}/%{pkg_name}/plugins/numa
 %{_datadir}/%{pkg_name}/plugins/storage-profile
+%{_datadir}/%{pkg_name}/plugins/setup
 %{_datadir}/%{pkg_name}/plugins/thread
 %{_datadir}/%{pkg_name}/plugins/validate
 %{_datadir}/%{pkg_name}/plugins/vm-classstat
@@ -892,20 +915,25 @@ fi
 %{_datadir}/%{pkg_name}/plugins/vm-memory
 %{_datadir}/%{pkg_name}/plugins/vm-overview
 %{_datadir}/%{pkg_name}/plugins/vm-profiler
+%dir %{_datadir}/%{pkg_name}/plugins
+%dir %{_datadir}/%{pkg_name}
+%dir %{_mavenpomdir}/%{pkg_name}
 %{_datadir}/%{pkg_name}/cache
 %{_datadir}/%{pkg_name}/data
 %{_datadir}/%{pkg_name}/logs
 %{_datadir}/%{pkg_name}/run
 %{_jnidir}/thermostat-*.jar
+%dir %{_jnidir}/%{pkg_name}
 %{_bindir}/thermostat
 %{_bindir}/thermostat-setup
 %{_libdir}/%{pkg_name}/libGTKThemeUtils.so
 %{_libdir}/%{pkg_name}/libGnomeKeyringWrapper.so
 %{_libdir}/%{pkg_name}/libHostNameWrapper.so
 %{_libdir}/%{pkg_name}/libUserNameUtilWrapper.so
-%{_libdir}/%{pkg_name}/thermostat-agent-core-1.2.0.jar
-%{_libdir}/%{pkg_name}/thermostat-keyring-1.2.0.jar
-%{_libdir}/%{pkg_name}/thermostat-laf-utils-1.2.0.jar
+%{_libdir}/%{pkg_name}/thermostat-agent-core-%{version}.jar
+%{_libdir}/%{pkg_name}/thermostat-keyring-%{version}.jar
+%{_libdir}/%{pkg_name}/thermostat-laf-utils-%{version}.jar
+%dir %{_libdir}/%{pkg_name}
 # FIXME: install or not-to-install agent service running as root?
 #        Currently: Don't install.
 #%{_unitdir}/%{pkg_name}-agent.service
@@ -916,8 +944,18 @@ fi
 %attr(0770,thermostat,thermostat) %dir %{system_cachedir}
 %attr(0770,thermostat,thermostat) %dir %{system_logdir}
 %attr(0770,thermostat,thermostat) %dir %{system_statedir}
+# Command channel script should be owned by thermostat user to drop root privileges
+%attr(0755,thermostat,thermostat) %{_datadir}/%{pkg_name}/bin/thermostat-command-channel
 # Own directories we ship libs in. See RHBZ#1057169
 %{_javadir}/%{pkg_name}
+%{_mandir}/man1/%{pkg_name}.1*
+%{system_root_datadir}/bash-completion/completions/%{pkg_name}
+# Own containing directories since bash-completion package might not
+# be installed
+%dir %{system_root_datadir}/bash-completion/completions
+%dir %{system_root_datadir}/bash-completion
+%{system_confdir}/bash_completion.d/%{pkg_name}
+%dir %{system_confdir}/bash_completion.d
 
 %files javadoc
 %doc LICENSE
@@ -939,9 +977,23 @@ fi
 # thermostat tomcat init script
 %attr(0755,root,root) %{system_initrddir}/%{thermostat_tomcat_service_name}
 %attr(0770,tomcat,tomcat) %dir %{_root_localstatedir}/log/%{thermostat_tomcat_service_name}
-%config(noreplace) %{_sysconfdir}/%{pkg_name}/thermostat_webstorageservice_jaas.conf
+%doc %{_docdir}/%{pkg_name}
 
 %changelog
+* Wed Mar 30 2016 Severin Gehwolf <sgehwolf@redhat.com> - 1.4.4-60.1
+- Update to latest upstream 1.4.4 release.
+- Resolves: RHBZ#1316863
+
+* Wed Mar 30 2016 Severin Gehwolf <sgehwolf@redhat.com> - 1.4.2-60.3
+- Own in-collection directories.
+- Resolves: RHBZ#1317970
+
+* Fri Jan 29 2016 Severin Gehwolf <sgehwolf@redhat.com> - 1.4.2-60.2
+- Point to RHSCL 2.2. User Guide directly.
+
+* Wed Jan 27 2016 Severin Gehwolf <sgehwolf@redhat.com> - 1.4.2-60.1
+- Update to Thermostat 1.4 for RHSCL 2.2.
+
 * Mon May 18 2015 Severin Gehwolf <sgehwolf@redhat.com> - 1.2.0-60.10
 - Read mongodb credentials from separate file.
 - Resolves: RHBZ#1222621 (CVE-2015-3201)
