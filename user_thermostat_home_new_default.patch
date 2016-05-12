@@ -6,7 +6,7 @@ diff --git a/config/src/main/java/com/redhat/thermostat/shared/config/internal/C
  
  
 -    private static final String THERMOSTAT_USER_DIR = ".thermostat";
-+    private static final String THERMOSTAT_USER_DIR = ".thermostat-1.2";
++    private static final String THERMOSTAT_USER_DIR = ".thermostat-1.4";
  
      private static final Translate<LocaleResources> t = LocaleResources.createLocalizer();
  
@@ -18,19 +18,7 @@ diff --git a/distribution/scripts/thermostat-devsetup b/distribution/scripts/the
  DEV_INPUT="$THERMOSTAT_HOME/etc/devsetup.input"
  if [ "x$USER_THERMOSTAT_HOME" == "x" ]; then
 -  USER_THERMOSTAT_HOME="$HOME/.thermostat"
-+  USER_THERMOSTAT_HOME="$HOME/.thermostat-1.2"
++  USER_THERMOSTAT_HOME="$HOME/.thermostat-1.4"
  fi
  
  # Call the setup script
-diff --git a/distribution/scripts/thermostat-setup b/distribution/scripts/thermostat-setup
---- a/distribution/scripts/thermostat-setup
-+++ b/distribution/scripts/thermostat-setup
-@@ -103,7 +103,7 @@
-   export THERMOSTAT_HOME
-   # Thermostat user home
-   if [ "x$USER_THERMOSTAT_HOME" = "x" ]; then
--    USER_THERMOSTAT_HOME="$HOME/.thermostat"
-+    USER_THERMOSTAT_HOME="$HOME/.thermostat-1.2"
-   fi
-   export USER_THERMOSTAT_HOME
-   THERMOSTAT="$THERMOSTAT_HOME/bin/thermostat"
