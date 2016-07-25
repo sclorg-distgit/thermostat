@@ -3,4 +3,7 @@
 # Where your tomcat installation lives
 CATALINA_BASE="__catalina_base__"
 CATALINA_HOME="/usr/share/tomcat"
-JAVA_OPTS="-Djava.security.auth.login.config=__jaas_config__"
+# -Djava.security.egd=file:/dev/./urandom makes our tomcat use
+# /dev/urandom over /dev/random which might block. See
+# RHBZ#1328972 for details.
+JAVA_OPTS="-Djava.security.auth.login.config=__jaas_config__ -Djava.security.egd=file:/dev/./urandom"
