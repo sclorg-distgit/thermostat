@@ -26,8 +26,10 @@ CATALINA_HOME="/usr/share/tomcat6"
 # You can pass some parameters to java here if you wish to
 #JAVA_OPTS="-Xminf0.1 -Xmaxf0.3"
 
-# Use JAVA_OPTS to set java.library.path for libtcnative.so
-JAVA_OPTS="-Djava.security.auth.login.config=__jaas_config__"
+# -Djava.security.egd=file:/dev/./urandom makes our tomcat use
+# /dev/urandom over /dev/random which might block. See
+# RHBZ#1328972 for details.
+JAVA_OPTS="-Djava.security.auth.login.config=__jaas_config__ -Djava.security.egd=file:/dev/./urandom"
 
 # What user should run tomcat
 #TOMCAT_USER="tomcat"
