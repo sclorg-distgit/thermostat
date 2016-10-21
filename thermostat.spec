@@ -214,7 +214,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.2%{?dist}
+Release:    %{custom_release}.3%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -1098,6 +1098,10 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Mon Jul 18 2016 Omair Majid <omajid@redhat.com> - 1.6.0-3
+- Use /dev/urandom for tomcat@thermostat service.
+- Resolves: RHBZ#1328972
+
 * Thu Jul 14 2016 Jie Kang <jkang@redhat.com> - 1.6.0-2
 - Add self-br for proper symlinking
 
