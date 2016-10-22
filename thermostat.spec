@@ -16,10 +16,12 @@
   %global is_rhel_6 1
   %global with_systemd 0
   %global custom_release   60
+  %global tomcat_name tomcat6
 %else
   %global is_rhel_6 0
   %global with_systemd 1
   %global custom_release   70
+  %global tomcat_name tomcat
 %endif
 
 %else
@@ -152,9 +154,6 @@
   %global system_logdir %{_localstatedir}/log/%{name}
   %global system_statedir %{_localstatedir}/run/%{name}
 }
-# system java dir definition (non-scl)
-%global system_javadir %{system_root_datadir}/java
-%global scl_javadir    %{_javadir}
 
 # Some Maven coordinates mismatch due to compat versioning.
 %{!?scl:
@@ -194,6 +193,7 @@
 %{!?scl:
   %global thermostat_catalina_base %{_localstatedir}/lib/tomcats/%{pkg_name}
 }
+%global system_catalina_home %{system_root_datadir}/%{tomcat_name}
 # The port tomcat will be listening on
 %global thermostat_catalina_port 8999
 %global thermostat_tomcat_service_name %{?scl_prefix}%{pkg_name}-tomcat
@@ -221,7 +221,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.11%{?dist}
+Release:    %{custom_release}.12%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -313,11 +313,8 @@ BuildRequires: %{?scl_prefix_mongodb}mvn(org.mongodb:mongo-java-driver)
 BuildRequires: %{?scl_prefix}mvn(%{netty_maven_coords})
 
 # BRs for webapp sub-package
-%if 0%{?is_rhel_6}
-BuildRequires: tomcat6
-%else
-BuildRequires: tomcat
-%endif
+BuildRequires: %{?tomcat_name}
+
 BuildRequires: %{?scl_prefix_java_common}mvn(javax.servlet:servlet-api) >= 2.5
 BuildRequires: %{?scl_prefix_java_common}mvn(commons-fileupload:commons-fileupload)
 
@@ -436,9 +433,9 @@ This package contains the API documentation for %{pkg_name}
 Summary:    Web storage endpoint for Thermostat
 BuildArch:  noarch
 %if 0%{?is_rhel_6}
-Requires:   tomcat6
+Requires:   %{tomcat_name}
 %else
-Requires:   tomcat >= 7.0.54
+Requires:   %{tomcat_name} >= 7.0.54
 %endif
 Requires:   %{name} = %{version}-%{release}
 Requires:   %{?scl_prefix_java_common}apache-commons-fileupload
@@ -890,6 +887,7 @@ rm -rf %{buildroot}%{thermostat_catalina_base}/webapps/%{pkg_name}/WEB-INF/lib/t
 # nicely configured without any configuration required prior
 # starting tomcat via systemd.
 sed 's#__catalina_base__#%{thermostat_catalina_base}#g' %{SOURCE3} > tomcat_service_thermostat.txt
+sed -i 's#__catalina_home__#%{system_catalina_home}#g' tomcat_service_thermostat.txt
 sed -i 's#__jaas_config__#%{_sysconfdir}/%{pkg_name}/%{pkg_name}_jaas.conf#g' tomcat_service_thermostat.txt
 %{?scl:
   # install the init script on RHEL 6
@@ -926,14 +924,14 @@ SYSTEMD_TOMCAT_ENV
 # to not port-conflict with system tomcat. See RHBZ#1054396
 pushd %{buildroot}/%{thermostat_catalina_base}
   for i in lib logs work temp; do
-    ln -s %{system_root_datadir}/tomcat/$i $i
+    ln -s %{system_catalina_home}/$i $i
   done
   mkdir conf
 popd
 # Symlink everything other than server.xml
-pushd %{system_root_datadir}/tomcat/conf
+pushd %{system_catalina_home}/conf
   for i in *; do
-    ln -s %{system_root_datadir}/tomcat/conf/$i %{buildroot}/%{thermostat_catalina_base}/conf/$i
+    ln -s %{system_catalina_home}/conf/$i %{buildroot}/%{thermostat_catalina_base}/conf/$i
   done
   rm %{buildroot}/%{thermostat_catalina_base}/conf/server.xml
   cp -p server.xml %{buildroot}/%{thermostat_catalina_base}/conf/server.xml
@@ -1060,11 +1058,16 @@ fi
 %{_datadir}/%{pkg_name}/plugins/vm-profiler
 %{_datadir}/%{pkg_name}/plugins/vm-find
 %{_datadir}/%{pkg_name}/plugins/experimental
+%dir %{_datadir}/%{pkg_name}/plugins
+%dir %{_datadir}/%{pkg_name}
+%dir %{_mavenpomdir}/%{pkg_name}
+%dir %{_javadir}/%{pkg_name}
 %{_datadir}/%{pkg_name}/cache
 %{_datadir}/%{pkg_name}/data
 %{_datadir}/%{pkg_name}/logs
 %{_datadir}/%{pkg_name}/run
 %{_libdir}/%{pkg_name}
+%dir %{_jnidir}/%{pkg_name}
 %{_jnidir}/thermostat-*.jar
 %{_bindir}/thermostat
 %{_bindir}/thermostat-setup
@@ -1136,6 +1139,10 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Thu Sep 01 2016 Jie Kang <jkang@redhat.com> - 1.6.0-12
+- Own in collection directories
+- Fix broken symlinks to tomcat files for el6
+
 * Mon Aug 29 2016 Jie Kang <jkang@redhat.com> - 1.6.0-11
 - Add self-br for proper symlinking
 
