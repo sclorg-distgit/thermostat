@@ -8,7 +8,7 @@
 
 # non_bootstrap_build == 1 means add self-BR so that
 # xmvn-subst symlinks correctly
-%global non_bootstrap_build  0
+%global non_bootstrap_build  1
 
 %if 0%{?rhel}
 
@@ -221,7 +221,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.8%{?dist}
+Release:    %{custom_release}.9%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -1136,6 +1136,9 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Wed Aug 03 2016 Jie Kang <jkang@redhat.com> - 1.6.0-9
+- Add self-br for proper symlinking
+
 * Wed Aug 03 2016 Jie Kang <jkang@redhat.com> - 1.6.0-8
 - Remove self-br for bootstrap build
 
