@@ -132,6 +132,12 @@
   %global system_logdir %{_root_localstatedir}/log/%{name}
   %global system_statedir %{_root_localstatedir}/run/%{name}
   %global system_sbindir %{_root_sbindir}
+
+# directories for system user for storage as a systemd service
+  %global user_datadir %{_localstatedir}/lib
+  %global user_cachedir %{_localstatedir}/cache
+  %global user_logdir %{_localstatedir}/log
+  %global user_statedir %{_localstatedir}/run
 %if 0%{?is_rhel_6}
   %global system_initrddir %{_root_sysconfdir}/rc.d/init.d/
 %endif
@@ -171,6 +177,7 @@
 # we use USER_THERMOSTAT_HOME only for systemd related setup.
 %global thermostat_home %{_datarootdir}/%{pkg_name}
 %{?scl:
+# /opt/rh/rh-thermostat16/root
   %global user_thermostat_home %{_scl_root}
 }
 # not SCL
@@ -214,7 +221,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.6%{?dist}
+Release:    %{custom_release}.7%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -675,6 +682,7 @@ sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/tar
 #######################################################
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_sysconfdir}/%{pkg_name}
+mkdir -p %{buildroot}%{_sysconfdir}/sysconfig
 mkdir -p %{buildroot}%{system_confdir}/sysconfig
 # JNI things live there
 mkdir -p %{buildroot}%{_libdir}/%{pkg_name}
@@ -722,14 +730,14 @@ popd
 %if 0%{?is_rhel_6}
   # FIXME: No way to run thermostat storage via init.d script.
 %else
-  pushd distribution/packaging/shared/systemd
+  pushd distribution/target/packaging/systemd
     sed -i 's/User=thermostat/User=root/g' thermostat-agent.service
     sed -i 's/Group=thermostat/Group=root/g' thermostat-agent.service
     # FIXME: install or not-to-install agent service running as root?
     #        Currently: Don't install.
     %{?scl:
-    sed -i 's#ExecStart=.*#ExecStart=/usr/bin/scl enable $THERMOSTAT1_SCLS_ENABLED -- %{thermostat_home}/bin/thermostat storage --start#g' thermostat-storage.service
-    sed -i 's#ExecStop=.*#ExecStop=/usr/bin/scl enable $THERMOSTAT1_SCLS_ENABLED -- %{thermostat_home}/bin/thermostat storage --stop#g' thermostat-storage.service
+    sed -i 's#ExecStart=.*#ExecStart=/usr/bin/scl enable $RH_THERMOSTAT16_SCLS_ENABLED -- %{thermostat_home}/bin/thermostat storage --start#g' thermostat-storage.service
+    sed -i 's#ExecStop=.*#ExecStop=/usr/bin/scl enable $RH_THERMOSTAT16_SCLS_ENABLED -- %{thermostat_home}/bin/thermostat storage --stop#g' thermostat-storage.service
     sed -i 's#EnvironmentFile=.*#EnvironmentFile=%{_sysconfdir}/sysconfig/%{name}#g' thermostat-storage.service
     }
     cp -a thermostat-storage.service %{buildroot}%{_unitdir}/%{?scl_prefix}%{pkg_name}-storage.service
@@ -738,7 +746,13 @@ popd
 
 # Install tmpfiles.d config file for /var/run/%{pkg_name}
 mkdir -p %{buildroot}%{system_tmpfilesdir}
-install -m 0644 distribution/packaging/shared/systemd/tmpfiles.d/%{pkg_name}.conf %{buildroot}%{system_tmpfilesdir}/%{name}.conf
+# Maintain rh-thermostat16-thermostat instead of thermostat
+pushd distribution/target/packaging/systemd/tmpfiles.d
+
+sed -i 's#/var/run/thermostat#/var/run/rh-thermostat16-thermostat#g' %{pkg_name}.conf
+install -m 0644 %{pkg_name}.conf %{buildroot}%{system_tmpfilesdir}/%{name}.conf
+
+popd
 
 # Install thermostat man page
 install -m 0644 distribution/packaging/shared/man/%{pkg_name}.1 %{buildroot}%{_mandir}/man1/%{pkg_name}.1
@@ -815,8 +829,8 @@ ln -s %{_sysconfdir}/%{pkg_name}/ \
 # which controls how thermostat behaves. In the systemd case we
 # want thermostat to run as system user.
 sed 's#__thermostat_home__#%{thermostat_home}/#g' %{SOURCE1} > thermostat_sysconfig.env
-sed -i 's#__thermostat_user_home__#%{user_thermostat_home}#g' thermostat_sysconfig.env
-cp thermostat_sysconfig.env %{buildroot}%{system_confdir}/sysconfig/%{name}
+sed -i 's#__thermostat_user_home__#%{user_thermostat_home}/#g' thermostat_sysconfig.env
+cp thermostat_sysconfig.env %{buildroot}%{_sysconfdir}/sysconfig/%{name}
 
 # Set up directory structure for running thermostat storage/
 # thermostat agend via systemd
@@ -835,6 +849,19 @@ ln -s %{system_datadir} %{buildroot}%{thermostat_home}/data
 ln -s %{system_statedir} %{buildroot}%{thermostat_home}/run
 ln -s %{system_logdir} %{buildroot}%{thermostat_home}/logs
 ln -s %{system_cachedir} %{buildroot}%{thermostat_home}/cache
+
+# Symlink system user folders as well for storage as a systemd service
+%{?scl:
+  %{__install} -d -m 0775 %{buildroot}%{user_datadir}
+  %{__install} -d -m 0775 %{buildroot}%{user_statedir}
+  %{__install} -d -m 0775 %{buildroot}%{user_logdir}
+  %{__install} -d -m 0775 %{buildroot}%{user_cachedir}
+
+  ln -s %{system_datadir} %{buildroot}%{user_datadir}/%{pkg_name}
+  ln -s %{system_statedir} %{buildroot}%{user_statedir}/%{pkg_name}
+  ln -s %{system_logdir} %{buildroot}%{user_logdir}/%{pkg_name}
+  ln -s %{system_cachedir} %{buildroot}%{user_cachedir}/%{pkg_name}
+}
 #######################################################
 # Thermostat web storage webapp
 #######################################################
@@ -1005,7 +1032,7 @@ fi
 %config %{_sysconfdir}/%{pkg_name}/osgi-export.properties
 %config %{_sysconfdir}/%{pkg_name}/thermostatrc
 # Required for systemd services
-%config(noreplace) %{system_confdir}/sysconfig/%{name}
+%config(noreplace) %{_sysconfdir}/sysconfig/%{name}
 %{_datadir}/%{pkg_name}/etc
 %{_datadir}/%{pkg_name}/bin
 %{_datadir}/%{pkg_name}/libs
@@ -1048,6 +1075,13 @@ fi
 %{system_tmpfilesdir}/%{name}.conf
 # To these directories get written to when thermostat storage/agent
 # run as systemd services
+%{?scl:
+  %{user_datadir}/%{pkg_name}
+  %{user_statedir}/%{pkg_name}
+  %{user_logdir}/%{pkg_name}
+  %{user_cachedir}/%{pkg_name}
+}
+
 %attr(0770,thermostat,thermostat) %dir %{system_datadir}
 %attr(0660,thermostat,thermostat) %{system_datadir}/setup-complete.stamp
 %attr(0770,thermostat,thermostat) %dir %{system_cachedir}
@@ -1102,7 +1136,12 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
-* Wed Jul 26 2016 Omair Majid <omajid@redhat.com> - 1.6.0-6
+* Wed Aug 03 2016 Jie Kang <jkang@redhat.com> - 1.6.0-7
+- Fix rh-thermostat16-thermostat-storage.service
+- Prevent /var/run/rh-thermostat16-thermostat file from 
+  disappearing after system reboot
+
+* Tue Jul 26 2016 Omair Majid <omajid@redhat.com> - 1.6.0-6
 - Make rh-thermostat16-thermostat parallel-installable with thermostat1-thermostat
 
 * Tue Jul 26 2016 Jie Kang <jkang@redhat.com> - 1.6.0-5

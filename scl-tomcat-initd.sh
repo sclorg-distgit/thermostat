@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# thermostat1-thermostat-tomcat    This shell script takes care of deploying SCL-ized thermostat
+# rh-thermostat16-thermostat-tomcat    This shell script takes care of deploying SCL-ized thermostat
 #                                  webapp.
 #
 # chkconfig: - 80 20
