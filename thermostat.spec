@@ -214,7 +214,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.4%{?dist}
+Release:    %{custom_release}.5%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -661,7 +661,7 @@ sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/t
 sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat-command-channel
 sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat
 # Fix path to tools.jar, replace system thermostatrc
-sed 's|__TOOLS_PATH__|%{jdk_base}/lib/tools.jar"|' %{SOURCE4} > distribution/target/image/etc/thermostatrc
+sed 's|__TOOLS_PATH__|%{jdk_base}/lib/tools.jar|' %{SOURCE4} > distribution/target/image/etc/thermostatrc
 sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat-agent-proxy
 sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat-command-channel
 sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat
@@ -1098,6 +1098,9 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Tue Jul 26 2016 Jie Kang <jkang@redhat.com> - 1.6.0-5
+- Fix typo in thermostatrc script replacement
+
 * Tue Jul 26 2016 Jie Kang <jkang@redhat.com> - 1.6.0-4
 - Use java-common package for apache-commons-fileupload
 
