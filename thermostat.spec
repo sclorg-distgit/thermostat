@@ -127,10 +127,10 @@
   %global system_confdir %{_root_sysconfdir}
   %global system_root_datadir %{_root_datadir}
   %global system_tmpfilesdir %{_root_exec_prefix}/lib/tmpfiles.d
-  %global system_datadir %{_root_localstatedir}/lib/%{pkg_name}
-  %global system_cachedir %{_root_localstatedir}/cache/%{pkg_name}
-  %global system_logdir %{_root_localstatedir}/log/%{pkg_name}
-  %global system_statedir %{_root_localstatedir}/run/%{pkg_name}
+  %global system_datadir %{_root_localstatedir}/lib/%{name}
+  %global system_cachedir %{_root_localstatedir}/cache/%{name}
+  %global system_logdir %{_root_localstatedir}/log/%{name}
+  %global system_statedir %{_root_localstatedir}/run/%{name}
   %global system_sbindir %{_root_sbindir}
 %if 0%{?is_rhel_6}
   %global system_initrddir %{_root_sysconfdir}/rc.d/init.d/
@@ -141,10 +141,10 @@
   %global system_confdir %{_sysconfdir}
   %global system_root_datadir %{_datadir}
   %global system_tmpfilesdir %{_tmpfilesdir}
-  %global system_datadir %{_localstatedir}/lib/%{pkg_name}
-  %global system_cachedir %{_localstatedir}/cache/%{pkg_name}
-  %global system_logdir %{_localstatedir}/log/%{pkg_name}
-  %global system_statedir %{_localstatedir}/run/%{pkg_name}
+  %global system_datadir %{_localstatedir}/lib/%{name}
+  %global system_cachedir %{_localstatedir}/cache/%{name}
+  %global system_logdir %{_localstatedir}/log/%{name}
+  %global system_statedir %{_localstatedir}/run/%{name}
 }
 # system java dir definition (non-scl)
 %global system_javadir %{system_root_datadir}/java
@@ -214,7 +214,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.5%{?dist}
+Release:    %{custom_release}.6%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -730,7 +730,7 @@ popd
     %{?scl:
     sed -i 's#ExecStart=.*#ExecStart=/usr/bin/scl enable $THERMOSTAT1_SCLS_ENABLED -- %{thermostat_home}/bin/thermostat storage --start#g' thermostat-storage.service
     sed -i 's#ExecStop=.*#ExecStop=/usr/bin/scl enable $THERMOSTAT1_SCLS_ENABLED -- %{thermostat_home}/bin/thermostat storage --stop#g' thermostat-storage.service
-    sed -i 's#EnvironmentFile=.*#EnvironmentFile=%{_sysconfdir}/sysconfig/%{pkg_name}#g' thermostat-storage.service
+    sed -i 's#EnvironmentFile=.*#EnvironmentFile=%{_sysconfdir}/sysconfig/%{name}#g' thermostat-storage.service
     }
     cp -a thermostat-storage.service %{buildroot}%{_unitdir}/%{?scl_prefix}%{pkg_name}-storage.service
   popd
@@ -738,7 +738,7 @@ popd
 
 # Install tmpfiles.d config file for /var/run/%{pkg_name}
 mkdir -p %{buildroot}%{system_tmpfilesdir}
-install -m 0644 distribution/packaging/shared/systemd/tmpfiles.d/%{pkg_name}.conf %{buildroot}%{system_tmpfilesdir}/%{pkg_name}.conf
+install -m 0644 distribution/packaging/shared/systemd/tmpfiles.d/%{pkg_name}.conf %{buildroot}%{system_tmpfilesdir}/%{name}.conf
 
 # Install thermostat man page
 install -m 0644 distribution/packaging/shared/man/%{pkg_name}.1 %{buildroot}%{_mandir}/man1/%{pkg_name}.1
@@ -750,7 +750,7 @@ install -m 0644 distribution/packaging/shared/man/%{pkg_name}.1 %{buildroot}%{_m
 # for it otherwise.
 # See: https://bugzilla.redhat.com/show_bug.cgi?id=1264094
 mkdir -p %{buildroot}%{system_root_datadir}/bash-completion/completions
-install -pm 644 distribution/target/packaging/bash-completion/thermostat-completion %{buildroot}%{system_root_datadir}/bash-completion/completions/%{pkg_name}
+install -pm 644 distribution/target/packaging/bash-completion/thermostat-completion %{buildroot}%{system_root_datadir}/bash-completion/completions/%{name}
 
 rm -rf distribution/target/image/bin/%{pkg_name}.orig
 # Remove developer setup things.
@@ -816,7 +816,7 @@ ln -s %{_sysconfdir}/%{pkg_name}/ \
 # want thermostat to run as system user.
 sed 's#__thermostat_home__#%{thermostat_home}/#g' %{SOURCE1} > thermostat_sysconfig.env
 sed -i 's#__thermostat_user_home__#%{user_thermostat_home}#g' thermostat_sysconfig.env
-cp thermostat_sysconfig.env %{buildroot}%{system_confdir}/sysconfig/%{pkg_name}
+cp thermostat_sysconfig.env %{buildroot}%{system_confdir}/sysconfig/%{name}
 
 # Set up directory structure for running thermostat storage/
 # thermostat agend via systemd
@@ -883,7 +883,9 @@ SYSTEMD_TOMCAT_ENV
     # The first file is used by thermostat1-thermostat-tomcat's service. The second one is
     # used by "tomcat@thermostat".
     cp tomcat_service_thermostat.txt %{buildroot}%{system_confdir}/sysconfig/%{thermostat_tomcat_service_name}
-    cp tomcat_service_thermostat.txt %{buildroot}%{system_confdir}/sysconfig/tomcat@%{pkg_name}
+    # systemd converts - in names to / in file paths:
+    mkdir -p %{buildroot}%{system_confdir}/sysconfig/tomcat@rh
+    cp tomcat_service_thermostat.txt %{buildroot}%{system_confdir}/sysconfig/tomcat@rh/thermostat16 
     sed "s#__service_file_name__#%{thermostat_tomcat_service_name}#g" %{SOURCE6} > systemd_tomcat_thermostat.service
     sed -i "s#__service_file_path__#%{system_confdir}/sysconfig#g" systemd_tomcat_thermostat.service
     cp systemd_tomcat_thermostat.service %{buildroot}%{_unitdir}/%{thermostat_tomcat_service_name}.service
@@ -992,7 +994,7 @@ fi
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/db.properties
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/logging.properties
 %config %{_sysconfdir}/%{pkg_name}/bash-complete-logging.properties
-%{system_root_datadir}/bash-completion/completions/%{pkg_name}
+%{system_root_datadir}/bash-completion/completions/%{name}
 # Own containing directories since bash-completion package might not
 # be installed
 %dir %{system_root_datadir}/bash-completion/completions
@@ -1003,7 +1005,7 @@ fi
 %config %{_sysconfdir}/%{pkg_name}/osgi-export.properties
 %config %{_sysconfdir}/%{pkg_name}/thermostatrc
 # Required for systemd services
-%config(noreplace) %{system_confdir}/sysconfig/%{pkg_name}
+%config(noreplace) %{system_confdir}/sysconfig/%{name}
 %{_datadir}/%{pkg_name}/etc
 %{_datadir}/%{pkg_name}/bin
 %{_datadir}/%{pkg_name}/libs
@@ -1043,7 +1045,7 @@ fi
 %if 0%{?with_systemd}
 %{_unitdir}/%{?scl_prefix}%{pkg_name}-storage.service
 %endif
-%{system_tmpfilesdir}/%{pkg_name}.conf
+%{system_tmpfilesdir}/%{name}.conf
 # To these directories get written to when thermostat storage/agent
 # run as systemd services
 %attr(0770,thermostat,thermostat) %dir %{system_datadir}
@@ -1088,7 +1090,9 @@ fi
   %{_unitdir}/%{?scl_prefix}%{pkg_name}-tomcat.service
   %attr(0770,tomcat,tomcat) %dir %{_root_localstatedir}/log/%{thermostat_tomcat_service_name}
   # File used by RHEL-7.1's tomcat@thermostat service.
-  %config(noreplace) %{system_confdir}/sysconfig/tomcat@%{pkg_name}
+  # escaped form of %%{scl_name}
+  %dir %{system_confdir}/sysconfig/tomcat@rh
+  %config(noreplace) %{system_confdir}/sysconfig/tomcat@rh/thermostat16
 %endif
 }
 %{!?scl:
@@ -1098,6 +1102,9 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Wed Jul 26 2016 Omair Majid <omajid@redhat.com> - 1.6.0-6
+- Make rh-thermostat16-thermostat parallel-installable with thermostat1-thermostat
+
 * Tue Jul 26 2016 Jie Kang <jkang@redhat.com> - 1.6.0-5
 - Fix typo in thermostatrc script replacement
 
