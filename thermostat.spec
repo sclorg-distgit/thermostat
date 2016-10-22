@@ -214,7 +214,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.3%{?dist}
+Release:    %{custom_release}.4%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -312,7 +312,7 @@ BuildRequires: tomcat6
 BuildRequires: tomcat
 %endif
 BuildRequires: %{?scl_prefix_java_common}mvn(javax.servlet:servlet-api) >= 2.5
-BuildRequires: %{?scl_prefix}mvn(commons-fileupload:commons-fileupload)
+BuildRequires: %{?scl_prefix_java_common}mvn(commons-fileupload:commons-fileupload)
 
 # thermostat web-storage-service BRs
 BuildRequires: %{?scl_prefix_java_common}mvn(org.eclipse.jetty:jetty-server)
@@ -434,7 +434,7 @@ Requires:   tomcat6
 Requires:   tomcat >= 7.0.54
 %endif
 Requires:   %{name} = %{version}-%{release}
-Requires:   %{?scl_prefix}apache-commons-fileupload
+Requires:   %{?scl_prefix_java_common}apache-commons-fileupload
 
 %description webapp
 This package contains the exploded web archive. This web application
@@ -1098,6 +1098,9 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Tue Jul 26 2016 Jie Kang <jkang@redhat.com> - 1.6.0-4
+- Use java-common package for apache-commons-fileupload
+
 * Mon Jul 18 2016 Omair Majid <omajid@redhat.com> - 1.6.0-3
 - Use /dev/urandom for tomcat@thermostat service.
 - Resolves: RHBZ#1328972
