@@ -4,7 +4,7 @@
 # Upstream Thermostat version triplet
 %global major        1
 %global minor        6
-%global patchlevel   0
+%global patchlevel   4
 
 # non_bootstrap_build == 1 means add self-BR so that
 # xmvn-subst symlinks correctly
@@ -221,7 +221,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.12%{?dist}
+Release:    %{custom_release}.5%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -252,6 +252,20 @@ Patch1:     0001_shared_fix_bundle_loading.patch
 # is 4.3 OSGi spec.
 Patch2:     0002_shared_osgi_spec_fixes.patch
 
+# This patch is in upstream and should be removed once the thermostat package
+# in the collection is updated to the latest release. The changeset can be
+# found at:
+# http://icedtea.classpath.org/hg/release/thermostat-1.6/rev/7a1c62f9337b
+# This resolves RHBZ#1329003
+Patch3:     0003_storage_init_fix.patch
+
+# This patch is in upstream and should be removed once the thermostat package
+# in the collection is updated to the latest release. The changeset can be
+# found at:
+# http://icedtea.classpath.org/hg/release/thermostat-1.6/rev/a26429779377
+# This resolves RHBZ#1388898
+Patch4:     0004_verify_token_removal_fix.patch
+
 %if 0%{?non_bootstrap_build}
 # Work-around xmvn-subst limitation
 BuildRequires: %{?scl_prefix}thermostat-webapp = %{version}
@@ -266,6 +280,7 @@ BuildRequires: java-devel >= 1:1.7.0
 BuildRequires: %{?scl_prefix_java_common}javapackages-tools
 BuildRequires: %{?scl_prefix_maven}maven-local
 BuildRequires: %{?scl_prefix_maven}maven-dependency-plugin
+BuildRequires: %{?scl_prefix_maven}maven-shade-plugin
 BuildRequires: %{?scl_prefix_maven}maven-surefire-plugin
 BuildRequires: %{?scl_prefix_maven}maven-war-plugin
 BuildRequires: %{?scl_prefix_maven}maven-clean-plugin
@@ -455,7 +470,8 @@ security.
 #%%setup -q -n %%{pkg_name}-%%{major}-%%{minor}-%%{hgrev}
 %patch1 -p1
 %patch2 -p1
-
+%patch3 -p1
+%patch4 -p1
 
 # Fix up artifact names which have different name upstream
 #  lucene
@@ -1033,6 +1049,8 @@ fi
 %config(noreplace) %{_sysconfdir}/sysconfig/%{name}
 %{_datadir}/%{pkg_name}/etc
 %{_datadir}/%{pkg_name}/bin
+# Command channel script should be owned by thermostat user to drop root privileges
+%attr(0755,thermostat,thermostat) %{_datadir}/%{pkg_name}/bin/thermostat-command-channel
 %{_datadir}/%{pkg_name}/libs
 %{_datadir}/%{pkg_name}/plugins/local
 %{_datadir}/%{pkg_name}/plugins/host-cpu
@@ -1071,6 +1089,7 @@ fi
 %{_jnidir}/thermostat-*.jar
 %{_bindir}/thermostat
 %{_bindir}/thermostat-setup
+%dir %{_mandir}/man1
 %{_mandir}/man1/%{pkg_name}.1*
 %if 0%{?with_systemd}
 %{_unitdir}/%{?scl_prefix}%{pkg_name}-storage.service
@@ -1139,6 +1158,35 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Wed Oct 26 2016 Jie Kang <jkang@redhat.com> - 1.6.4-5
+- Add patch for fixing verified token removal
+  Resolves RHBZ#1388898
+
+* Wed Oct 12 2016 Jie Kang <jkang@redhat.com> - 1.6.4-4
+- Add patch for fixing storage initilization on
+  concurrent connections. Resolves RHBZ#1329003
+
+* Tue Oct 11 2016 Severin Gehwolf <sgehwolf@redhat.com> - 1.6.4-3
+- Change owner of thermostat-command-channel script to
+  thermostat:thermostat. Resolves RHBZ#1379702
+ 
+* Thu Sep 15 2016 Jie Kang <jkang@redhat.com> - 1.6.4-2
+- Add self-br for proper symlinking
+
+* Thu Sep 15 2016 Jie Kang <jkang@redhat.com> - 1.6.4-1
+- Update to latest upstream release 1.6.4
+- For RHBZ#1364549
+
+* Wed Sep 14 2016 Jie Kang <jkang@redhat.com> - 1.6.2-2
+- Add self-br for proper symlinking
+
+* Wed Sep 14 2016 Jie Kang <jkang@redhat.com> - 1.6.2-1
+- Update to latest upstream release 1.6.2
+- Resolves RHBZ#1364549
+
+* Tue Sep 06 2016 Jie Kang <jkang@redhat.com> - 1.6.0-13
+- Own another in collection directory. Resolves RHBZ#1371518
+
 * Thu Sep 01 2016 Jie Kang <jkang@redhat.com> - 1.6.0-12
 - Own in collection directories
 - Fix broken symlinks to tomcat files for el6

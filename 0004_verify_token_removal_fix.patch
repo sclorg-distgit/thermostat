@@ -1,0 +1,61 @@
+# HG changeset patch
+# User Jie Kang <jkang@redhat.com>
+# Date 1477487506 14400
+#      Wed Oct 26 09:11:46 2016 -0400
+# Node ID a26429779377d98fcf07664d767f9d3400043eed
+# Parent  9fe2266b4fa55eb78d372e634790878f328303f5
+Fix verified-token removal in TokenManager
+
+PR3210
+
+Reviewed-by: jerboaa
+Review-thread: http://icedtea.classpath.org/pipermail/thermostat/2016-October/021425.html
+
+diff --git a/web/server/src/main/java/com/redhat/thermostat/web/server/TokenManager.java b/web/server/src/main/java/com/redhat/thermostat/web/server/TokenManager.java
+--- a/web/server/src/main/java/com/redhat/thermostat/web/server/TokenManager.java
++++ b/web/server/src/main/java/com/redhat/thermostat/web/server/TokenManager.java
+@@ -85,12 +85,12 @@
+         return token;
+     }
+ 
+-    private void scheduleRemoval(final String clientToken) {
++    private void scheduleRemoval(final String clientKey) {
+         TimerTask task = new TimerTask() {
+             
+             @Override
+             public void run() {
+-                tokens.remove(clientToken);
++                tokens.remove(clientKey);
+             }
+         };
+         timer.schedule(task, timeout);
+@@ -111,7 +111,7 @@
+             byte[] storedToken = tokens.get(clientKey);
+             boolean verified = Arrays.equals(candidateToken, storedToken);
+             if (verified) {
+-                tokens.remove(clientToken);
++                tokens.remove(clientKey);
+             }
+             return verified;
+         }
+diff --git a/web/server/src/test/java/com/redhat/thermostat/web/server/TokenManagerTest.java b/web/server/src/test/java/com/redhat/thermostat/web/server/TokenManagerTest.java
+--- a/web/server/src/test/java/com/redhat/thermostat/web/server/TokenManagerTest.java
++++ b/web/server/src/test/java/com/redhat/thermostat/web/server/TokenManagerTest.java
+@@ -91,6 +91,17 @@
+     }
+     
+     @Test
++    public void generateTokenCanNotBeReusedTest() {
++        TokenManager tokenManager = new TokenManager(mock(TimerRegistry.class));
++        String clientToken = "something";
++        String action = "myAction";
++        byte[] token = tokenManager.generateToken(clientToken.getBytes(), action);
++        assertTrue(tokenManager.verifyToken(clientToken.getBytes(), token, action));
++        // try again with same action name, which should not verify
++        assertFalse(tokenManager.verifyToken(clientToken.getBytes(), token, action));
++    }
++
++    @Test
+     public void generateAndVerifyTokenTest() {
+         TokenManager tokenManager = new TokenManager(mock(TimerRegistry.class));
+         String clientToken = "something";
