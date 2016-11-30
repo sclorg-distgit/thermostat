@@ -154,9 +154,6 @@
   %global system_logdir %{_localstatedir}/log/%{name}
   %global system_statedir %{_localstatedir}/run/%{name}
 }
-# system java dir definition (non-scl)
-%global system_javadir %{system_root_datadir}/java
-%global scl_javadir    %{_javadir}
 
 # Some Maven coordinates mismatch due to compat versioning.
 %{!?scl:
@@ -224,7 +221,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.10%{?dist}
+Release:    %{custom_release}.11%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -1068,11 +1065,16 @@ fi
 %{_datadir}/%{pkg_name}/plugins/vm-profiler
 %{_datadir}/%{pkg_name}/plugins/vm-find
 %{_datadir}/%{pkg_name}/plugins/experimental
+%dir %{_datadir}/%{pkg_name}/plugins
+%dir %{_datadir}/%{pkg_name}
+%dir %{_mavenpomdir}/%{pkg_name}
+%dir %{_javadir}/%{pkg_name}
 %{_datadir}/%{pkg_name}/cache
 %{_datadir}/%{pkg_name}/data
 %{_datadir}/%{pkg_name}/logs
 %{_datadir}/%{pkg_name}/run
 %{_libdir}/%{pkg_name}
+%dir %{_jnidir}/%{pkg_name}
 %{_jnidir}/thermostat-*.jar
 %{_bindir}/thermostat
 %{_bindir}/thermostat-setup
@@ -1144,6 +1146,10 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Thu Sep 01 2016 Jie Kang <jkang@redhat.com> - 1.6.0-11
+- Own in collection directories
+- Resolves RHBZ#1371518
+
 * Thu Sep 01 2016 Jie Kang <jkang@redhat.com> - 1.6.0-10
 - Fix broken symlinks to tomcat files for el6
 - Resolves RHBZ#1371497, RHBZ#1371691
