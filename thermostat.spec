@@ -221,7 +221,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.2%{?dist}
+Release:    %{custom_release}.3%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -1041,6 +1041,8 @@ fi
 %config(noreplace) %{_sysconfdir}/sysconfig/%{name}
 %{_datadir}/%{pkg_name}/etc
 %{_datadir}/%{pkg_name}/bin
+# Command channel script should be owned by thermostat user to drop root privileges
+%attr(0755,thermostat,thermostat) %{_datadir}/%{pkg_name}/bin/thermostat-command-channel
 %{_datadir}/%{pkg_name}/libs
 %{_datadir}/%{pkg_name}/plugins/local
 %{_datadir}/%{pkg_name}/plugins/host-cpu
@@ -1147,6 +1149,10 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Tue Oct 11 2016 Severin Gehwolf <sgehwolf@redhat.com> - 1.6.4-3
+- Change owner of thermostat-command-channel script to
+  thermostat:thermostat. Resolves: RHBZ#1379702
+
 * Thu Sep 15 2016 Jie Kang <jkang@redhat.com> - 1.6.4-2
 - Add self-br for proper symlinking
 
