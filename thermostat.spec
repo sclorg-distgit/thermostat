@@ -4,7 +4,7 @@
 # Upstream Thermostat version triplet
 %global major        1
 %global minor        6
-%global patchlevel   2
+%global patchlevel   4
 
 # non_bootstrap_build == 1 means add self-BR so that
 # xmvn-subst symlinks correctly
@@ -1147,6 +1147,13 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Thu Sep 15 2016 Jie Kang <jkang@redhat.com> - 1.6.4-2
+- Add self-br for proper symlinking
+
+* Thu Sep 15 2016 Jie Kang <jkang@redhat.com> - 1.6.4-1
+- Update to upstream 1.6.4 release
+- Resolves RHBZ#1364549
+
 * Wed Sep 14 2016 Jie Kang <jkang@redhat.com> - 1.6.2-2
 - Add self-br for proper symlinking
 
