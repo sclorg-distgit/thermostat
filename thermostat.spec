@@ -4,11 +4,11 @@
 # Upstream Thermostat version triplet
 %global major        1
 %global minor        6
-%global patchlevel   0
+%global patchlevel   2
 
 # non_bootstrap_build == 1 means add self-BR so that
 # xmvn-subst symlinks correctly
-%global non_bootstrap_build  1
+%global non_bootstrap_build  0
 
 %if 0%{?rhel}
 
@@ -221,7 +221,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.11%{?dist}
+Release:    %{custom_release}.1%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -266,6 +266,7 @@ BuildRequires: java-devel >= 1:1.7.0
 BuildRequires: %{?scl_prefix_java_common}javapackages-tools
 BuildRequires: %{?scl_prefix_maven}maven-local
 BuildRequires: %{?scl_prefix_maven}maven-dependency-plugin
+BuildRequires: %{?scl_prefix_maven}maven-shade-plugin
 BuildRequires: %{?scl_prefix_maven}maven-surefire-plugin
 BuildRequires: %{?scl_prefix_maven}maven-war-plugin
 BuildRequires: %{?scl_prefix_maven}maven-clean-plugin
@@ -1146,6 +1147,10 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Wed Sep 14 2016 Jie Kang <jkang@redhat.com> - 1.6.2-1
+- Update to upstream 1.6.2 release
+- Resolves RHBZ#1364549
+
 * Thu Sep 01 2016 Jie Kang <jkang@redhat.com> - 1.6.0-11
 - Own in collection directories
 - Resolves RHBZ#1371518
