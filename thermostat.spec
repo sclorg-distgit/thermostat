@@ -221,7 +221,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.3%{?dist}
+Release:    %{custom_release}.4%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -251,6 +251,13 @@ Patch1:     0001_shared_fix_bundle_loading.patch
 # For now _NOT_ suitable for upstream until felix ships an API only package which
 # is 4.3 OSGi spec.
 Patch2:     0002_shared_osgi_spec_fixes.patch
+
+# This patch is in upstream and should be removed once the thermostat package
+# in the collection is updated to the latest release. The changeset is can
+# be found at:
+# http://icedtea.classpath.org/hg/release/thermostat-1.6/rev/7a1c62f9337b
+# This resolves RHBZ#1329003
+Patch3:     0003_storage_init_fix.patch
 
 %if 0%{?non_bootstrap_build}
 # Work-around xmvn-subst limitation
@@ -456,7 +463,7 @@ security.
 #%%setup -q -n %%{pkg_name}-%%{major}-%%{minor}-%%{hgrev}
 %patch1 -p1
 %patch2 -p1
-
+%patch3 -p1
 
 # Fix up artifact names which have different name upstream
 #  lucene
@@ -1149,6 +1156,10 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Wed Oct 12 2016 Jie Kang <jkang@redhat.com> - 1.6.4-4
+- Add patch for fixing storage initilization on
+  concurrent connections. Resolves RHBZ#1329003
+
 * Tue Oct 11 2016 Severin Gehwolf <sgehwolf@redhat.com> - 1.6.4-3
 - Change owner of thermostat-command-channel script to
   thermostat:thermostat. Resolves: RHBZ#1379702

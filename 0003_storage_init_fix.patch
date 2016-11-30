@@ -1,0 +1,601 @@
+# HG changeset patch
+# User Andrew Azores <aazores@redhat.com>
+# Date 1474381585 14400
+#      Tue Sep 20 10:26:25 2016 -0400
+# Node ID 7a1c62f9337becc320476d4172025f24021da3e9
+# Parent  d3a72ee75e2634dfeb996c151fb6d68b68f23f9b
+Ensure storage is only initialized once in WebStorageEndPoint
+
+PR3170
+Reviewed-by: jerboaa
+Review-thread: http://icedtea.classpath.org/pipermail/thermostat/2016-September/020830.html
+
+diff --git a/web/server/pom.xml b/web/server/pom.xml
+--- a/web/server/pom.xml
++++ b/web/server/pom.xml
+@@ -63,6 +63,17 @@
+       <scope>test</scope>
+     </dependency>
+     <dependency>
++      <groupId>org.powermock</groupId>
++      <artifactId>powermock-api-mockito</artifactId>
++      <scope>test</scope>
++    </dependency>
++    <dependency>
++      <groupId>org.powermock</groupId>
++      <artifactId>powermock-module-junit4</artifactId>
++      <scope>test</scope>
++    </dependency>
++
++    <dependency>
+       <groupId>org.eclipse.jetty</groupId>
+       <artifactId>jetty-server</artifactId>
+       <version>${jetty.version}</version>
+diff --git a/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactory.java b/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactory.java
+--- a/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactory.java
++++ b/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactory.java
+@@ -34,50 +34,14 @@
+  * to do so, delete this exception statement from your version.
+  */
+ 
+-
+ package com.redhat.thermostat.web.server;
+ 
+ import com.redhat.thermostat.shared.config.CommonPaths;
+-import com.redhat.thermostat.shared.config.SSLConfiguration;
+-import com.redhat.thermostat.shared.config.internal.SSLConfigurationImpl;
+ import com.redhat.thermostat.storage.core.Storage;
+ import com.redhat.thermostat.storage.core.StorageCredentials;
+-import com.redhat.thermostat.storage.core.StorageProvider;
+-import com.redhat.thermostat.storage.mongodb.MongoStorageProvider;
+ 
+-class StorageFactory {
++interface StorageFactory {
+ 
+-    private static Storage storage;
++    Storage getStorage(String storageClass, String storageEndpoint, CommonPaths paths, StorageCredentials creds);
+ 
+-    // Web server is not OSGi, this factory method is workaround.
+-    static Storage getStorage(String storageClass, final String storageEndpoint, final CommonPaths paths,
+-            final StorageCredentials creds) {
+-        if (storage != null) {
+-            return storage;
+-        }
+-        SSLConfiguration sslConf = new SSLConfigurationImpl(paths);
+-        try {
+-            StorageProvider provider = (StorageProvider) Class.forName(storageClass).newInstance();
+-            provider.setConfig(storageEndpoint, creds, sslConf);
+-            storage = provider.createStorage();
+-            storage.getConnection().connect();
+-            return storage;
+-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
+-            // This fallback should infact not be used. But it gives us an automatic
+-            // Import-Package in the OSGi descriptor, which actually *prevents* this same
+-            // exception from happening (a recursive self-defeating catch-block) :-)
+-            System.err.println("could not instantiate provider: " + storageClass + ", falling back to MongoStorage");
+-            e.printStackTrace();
+-            StorageProvider provider = new MongoStorageProvider();
+-            provider.setConfig(storageEndpoint, creds, sslConf);
+-            storage = provider.createStorage();
+-            return storage;
+-        }
+-    }
+-
+-    // Testing hook used in WebStorageEndpointTest
+-    static void setStorage(Storage storage) {
+-        StorageFactory.storage = storage;
+-    }
+ }
+-
+diff --git a/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactoryImpl.java b/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactoryImpl.java
+new file mode 100644
+--- /dev/null
++++ b/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactoryImpl.java
+@@ -0,0 +1,83 @@
++/*
++ * Copyright 2012-2016 Red Hat, Inc.
++ *
++ * This file is part of Thermostat.
++ *
++ * Thermostat is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published
++ * by the Free Software Foundation; either version 2, or (at your
++ * option) any later version.
++ *
++ * Thermostat is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with Thermostat; see the file COPYING.  If not see
++ * <http://www.gnu.org/licenses/>.
++ *
++ * Linking this code with other modules is making a combined work
++ * based on this code.  Thus, the terms and conditions of the GNU
++ * General Public License cover the whole combination.
++ *
++ * As a special exception, the copyright holders of this code give
++ * you permission to link this code with independent modules to
++ * produce an executable, regardless of the license terms of these
++ * independent modules, and to copy and distribute the resulting
++ * executable under terms of your choice, provided that you also
++ * meet, for each linked independent module, the terms and conditions
++ * of the license of that module.  An independent module is a module
++ * which is not derived from or based on this code.  If you modify
++ * this code, you may extend this exception to your version of the
++ * library, but you are not obligated to do so.  If you do not wish
++ * to do so, delete this exception statement from your version.
++ */
++
++
++package com.redhat.thermostat.web.server;
++
++import com.redhat.thermostat.shared.config.CommonPaths;
++import com.redhat.thermostat.shared.config.SSLConfiguration;
++import com.redhat.thermostat.shared.config.internal.SSLConfigurationImpl;
++import com.redhat.thermostat.storage.core.Storage;
++import com.redhat.thermostat.storage.core.StorageCredentials;
++import com.redhat.thermostat.storage.core.StorageProvider;
++import com.redhat.thermostat.storage.mongodb.MongoStorageProvider;
++
++class StorageFactoryImpl {
++
++    private static Storage storage;
++
++    // Web server is not OSGi, this factory method is workaround.
++    static Storage getStorage(String storageClass, final String storageEndpoint, final CommonPaths paths,
++            final StorageCredentials creds) {
++        if (storage != null) {
++            return storage;
++        }
++        SSLConfiguration sslConf = new SSLConfigurationImpl(paths);
++        try {
++            StorageProvider provider = (StorageProvider) Class.forName(storageClass).newInstance();
++            provider.setConfig(storageEndpoint, creds, sslConf);
++            storage = provider.createStorage();
++            storage.getConnection().connect();
++            return storage;
++        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
++            // This fallback should infact not be used. But it gives us an automatic
++            // Import-Package in the OSGi descriptor, which actually *prevents* this same
++            // exception from happening (a recursive self-defeating catch-block) :-)
++            System.err.println("could not instantiate provider: " + storageClass + ", falling back to MongoStorage");
++            e.printStackTrace();
++            StorageProvider provider = new MongoStorageProvider();
++            provider.setConfig(storageEndpoint, creds, sslConf);
++            storage = provider.createStorage();
++            return storage;
++        }
++    }
++
++    // Testing hook used in WebStorageEndpointTest
++    static void setStorage(Storage storage) {
++        StorageFactoryImpl.storage = storage;
++    }
++}
++
+diff --git a/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactoryProvider.java b/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactoryProvider.java
+new file mode 100644
+--- /dev/null
++++ b/web/server/src/main/java/com/redhat/thermostat/web/server/StorageFactoryProvider.java
+@@ -0,0 +1,43 @@
++/*
++ * Copyright 2012-2016 Red Hat, Inc.
++ *
++ * This file is part of Thermostat.
++ *
++ * Thermostat is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published
++ * by the Free Software Foundation; either version 2, or (at your
++ * option) any later version.
++ *
++ * Thermostat is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with Thermostat; see the file COPYING.  If not see
++ * <http://www.gnu.org/licenses/>.
++ *
++ * Linking this code with other modules is making a combined work
++ * based on this code.  Thus, the terms and conditions of the GNU
++ * General Public License cover the whole combination.
++ *
++ * As a special exception, the copyright holders of this code give
++ * you permission to link this code with independent modules to
++ * produce an executable, regardless of the license terms of these
++ * independent modules, and to copy and distribute the resulting
++ * executable under terms of your choice, provided that you also
++ * meet, for each linked independent module, the terms and conditions
++ * of the license of that module.  An independent module is a module
++ * which is not derived from or based on this code.  If you modify
++ * this code, you may extend this exception to your version of the
++ * library, but you are not obligated to do so.  If you do not wish
++ * to do so, delete this exception statement from your version.
++ */
++
++package com.redhat.thermostat.web.server;
++
++interface StorageFactoryProvider {
++
++    StorageFactory createStorageFactory();
++
++}
+diff --git a/web/server/src/main/java/com/redhat/thermostat/web/server/WebStorageEndPoint.java b/web/server/src/main/java/com/redhat/thermostat/web/server/WebStorageEndPoint.java
+--- a/web/server/src/main/java/com/redhat/thermostat/web/server/WebStorageEndPoint.java
++++ b/web/server/src/main/java/com/redhat/thermostat/web/server/WebStorageEndPoint.java
+@@ -145,6 +145,8 @@
+ 
+     private static final Logger logger = LoggingUtils.getLogger(WebStorageEndPoint.class);
+ 
++    private final Object storageLock = new Object();
++    private StorageFactoryProvider storageFactoryProvider;
+     private Storage storage;
+     private Gson gson;
+     private CommonPaths paths;
+@@ -164,14 +166,27 @@
+     private TimerRegistry timerRegistry;
+     
+     public WebStorageEndPoint() {
+-        // default constructor
++        // this ugliness allows for both unit tests to inject mocks and "integration" tests to inject fake values
++        this.storageFactoryProvider = new StorageFactoryProvider() {
++            @Override
++            public StorageFactory createStorageFactory() {
++                return new StorageFactory() {
++                    @Override
++                    public Storage getStorage(String storageClass, String storageEndpoint, CommonPaths paths, StorageCredentials creds) {
++                        return StorageFactoryImpl.getStorage(storageClass, storageEndpoint, paths, creds);
++                    }
++                };
++            }
++        };
+     }
+     
+     // Package private for testing
+-    WebStorageEndPoint(TimerRegistry timerRegistry, CommonPaths paths, ConfigurationFinder finder) {
++    WebStorageEndPoint(TimerRegistry timerRegistry, CommonPaths paths, ConfigurationFinder finder,
++                       StorageFactoryProvider storageFactoryProvider) {
+         this.timerRegistry = timerRegistry;
+         this.paths = paths;
+         this.finder = finder;
++        this.storageFactoryProvider = storageFactoryProvider;
+     }
+ 
+     @Override
+@@ -222,41 +237,52 @@
+             servletContext.setAttribute(PREPARED_STMT_MANAGER_KEY, new PreparedStatementManager());
+             servletContext.setAttribute(SERVER_TOKEN_KEY, UUID.randomUUID());
+         }
++
++        synchronized (storageLock) {
++            if (storage == null) {
++                StorageCredentials creds;
++                try {
++                    creds = getStorageCredentials();
++                } catch (IOException e) {
++                    String errorMsg = "Unable to retrieve backing storage credentials from file " + CREDENTIALS_FILE;
++                    throw new InvalidConfigurationException(errorMsg);
++                }
++                // if creds are null there is no point to continue, fail prominently.
++                if (creds == null) {
++                    String errorMsg = "No backing storage credentials file (" + CREDENTIALS_FILE + ") available";
++                    throw new InvalidConfigurationException(errorMsg);
++                }
++                String storageClass = getServletConfig().getInitParameter(STORAGE_CLASS);
++                String storageEndpoint = getServletConfig().getInitParameter(STORAGE_ENDPOINT);
++                storage = storageFactoryProvider.createStorageFactory().getStorage(storageClass, storageEndpoint, paths, creds);
++            }
++        }
+     }
+     
+     @Override
+     public void destroy() {
+         timerRegistry.shutDown();
+-        logger.log(Level.INFO, "Going to shut down web service");
+-        if (storage != null) {
+-            // See IcedTea BZ#1315. Shut down storage in order
+-            // to avoid further memory leaks.
+-            Connection connection = storage.getConnection();
+-            try {
+-                // Tests have null connections
+-                if (connection != null) {
+-                    connection.disconnect();
++        synchronized (storageLock) {
++            logger.log(Level.INFO, "Going to shut down web service");
++            if (storage != null) {
++                // See IcedTea BZ#1315. Shut down storage in order
++                // to avoid further memory leaks.
++                Connection connection = storage.getConnection();
++                try {
++                    // Tests have null connections
++                    if (connection != null) {
++                        connection.disconnect();
++                    }
++                } finally {
++                    storage.shutdown();
+                 }
+-            } finally {
+-                storage.shutdown();
+             }
++            logger.log(Level.INFO, "Web service shut down finished");
+         }
+-        logger.log(Level.INFO, "Web service shut down finished");
+     }
+ 
+     @Override
+     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
+-        if (storage == null) {
+-            StorageCredentials creds = getStorageCredentials();
+-            // if creds are null there is no point to continue, fail prominently.
+-            if (creds == null) {
+-                String errorMsg = "No backing storage credentials file (" + CREDENTIALS_FILE + ") available";
+-                throw new InvalidConfigurationException(errorMsg);
+-            }
+-            String storageClass = getServletConfig().getInitParameter(STORAGE_CLASS);
+-            String storageEndpoint = getServletConfig().getInitParameter(STORAGE_ENDPOINT);
+-            storage = StorageFactory.getStorage(storageClass, storageEndpoint, paths, creds);
+-        }
+         String uri = req.getRequestURI();
+         int lastPartIdx = uri.lastIndexOf("/");
+         String cmd = uri.substring(lastPartIdx + 1);
+@@ -413,8 +439,9 @@
+                 // PreparedStatementManager
+                 PreparedStatement<T> targetPreparedStatement;
+                 try {
+-                    targetPreparedStatement = (PreparedStatement<T>) storage
+-                            .prepareStatement(desc);
++                    synchronized (storageLock) {
++                        targetPreparedStatement = storage.prepareStatement(desc);
++                    }
+                 } catch (DescriptorParsingException e) {
+                     logger.log(Level.WARNING, "Descriptor parse error!", e);
+                     SharedStateId id = new SharedStateId(WebPreparedStatementResponse.DESCRIPTOR_PARSE_FAILED, serverToken);
+@@ -452,7 +479,9 @@
+         }
+         
+         String agentId = req.getParameter("agentId");
+-        storage.purge(agentId);
++        synchronized (storageLock) {
++            storage.purge(agentId);
++        }
+         resp.setStatus(HttpServletResponse.SC_OK);
+     }
+ 
+@@ -466,21 +495,23 @@
+         if (! isAllowedToLoadFile(req, resp, name)) {
+             return;
+         }
+-        try (InputStream data = storage.loadFile(name)) {
+-            if (data == null) {
+-                resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+-                return;
++        synchronized (storageLock) {
++            try (InputStream data = storage.loadFile(name)) {
++                if (data == null) {
++                    resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
++                    return;
++                }
++                OutputStream out = resp.getOutputStream();
++                byte[] buffer = new byte[512];
++                int read = 0;
++                while (read >= 0) {
++                    read = data.read(buffer);
++                    if (read > 0) {
++                        out.write(buffer, 0, read);
++                    }
++                }
++                resp.setStatus(HttpServletResponse.SC_OK);
+             }
+-            OutputStream out = resp.getOutputStream();
+-            byte[] buffer = new byte[512];
+-            int read = 0;
+-            while (read >= 0) {
+-                read = data.read(buffer);
+-                if (read > 0) {
+-                    out.write(buffer, 0, read);
+-                }
+-            }
+-            resp.setStatus(HttpServletResponse.SC_OK);
+         }
+     }
+ 
+@@ -507,7 +538,9 @@
+                         return;
+                     }
+                     InputStream in = item.getInputStream();
+-                    storage.saveFile(name, in);
++                    synchronized (storageLock) {
++                        storage.saveFile(name, in);
++                    }
+                 }
+             }
+         } catch (FileUploadException ex) {
+@@ -591,7 +624,9 @@
+                 // The following has the side effect of registering the newly
+                 // deserialized Category in the Categories class.
+                 category = gson.fromJson(categoryParam, Category.class);
+-                storage.registerCategory(category);
++                synchronized (storageLock) {
++                    storage.registerCategory(category);
++                }
+             }
+             id = catManager.putCategory(getServerToken(), category, catIdentifier);
+             if (isAggregateCat) {
+diff --git a/web/server/src/test/java/com/redhat/thermostat/web/server/WebStorageEndPointUnitTest.java b/web/server/src/test/java/com/redhat/thermostat/web/server/WebStorageEndPointUnitTest.java
+--- a/web/server/src/test/java/com/redhat/thermostat/web/server/WebStorageEndPointUnitTest.java
++++ b/web/server/src/test/java/com/redhat/thermostat/web/server/WebStorageEndPointUnitTest.java
+@@ -42,10 +42,14 @@
+ import static org.junit.Assert.assertNull;
+ import static org.junit.Assert.assertTrue;
+ import static org.junit.Assert.fail;
++import static org.mockito.Matchers.any;
++import static org.mockito.Matchers.anyString;
+ import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.verifyZeroInteractions;
+ import static org.mockito.Mockito.when;
+ import static org.mockito.Mockito.verify;
+ import static org.mockito.Matchers.eq;
++import static org.powermock.api.mockito.PowerMockito.whenNew;
+ 
+ import java.io.File;
+ import java.io.IOException;
+@@ -61,13 +65,18 @@
+ import javax.servlet.ServletContext;
+ import javax.servlet.ServletException;
+ 
++import com.redhat.thermostat.storage.core.Storage;
+ import org.junit.After;
++import org.junit.Before;
+ import org.junit.Test;
++import org.junit.runner.RunWith;
+ import org.mockito.ArgumentCaptor;
+ 
+ import com.redhat.thermostat.shared.config.CommonPaths;
+ import com.redhat.thermostat.storage.core.StorageCredentials;
+ import com.redhat.thermostat.web.server.auth.WebStoragePathHandler;
++import org.powermock.core.classloader.annotations.PrepareForTest;
++import org.powermock.modules.junit4.PowerMockRunner;
+ 
+ /**
+  * A test class for {@link WebStorageEndPoint}. It should contain tests for
+@@ -75,9 +84,26 @@
+  * more of the unit-test nature (rather than of the functional test nature).
+  *
+  */
++@RunWith(PowerMockRunner.class)
+ public class WebStorageEndPointUnitTest {
+ 
+     private static final String TH_HOME_PROP_NAME = "THERMOSTAT_HOME";
++
++    private StorageFactoryProvider storageFactoryProvider;
++    private StorageFactory storageFactory;
++    private Storage storage;
++
++    @Before
++    public void setup() {
++        storage = mock(Storage.class);
++        storageFactory = mock(StorageFactory.class);
++        storageFactoryProvider = mock(StorageFactoryProvider.class);
++
++        when(storageFactoryProvider.createStorageFactory()).thenReturn(storageFactory);
++        when(storageFactory.getStorage(anyString(), anyString(), any(CommonPaths.class), any(StorageCredentials.class)))
++                .thenReturn(storage);
++    }
++
+     @After
+     public void tearDown() {
+         System.clearProperty(TH_HOME_PROP_NAME);
+@@ -217,17 +243,27 @@
+      * @throws IOException 
+      */
+     @Test
+-    public void testSetServletAttribute() throws ServletException, IOException {
++    @PrepareForTest({ WebStorageEndPoint.class })
++    public void testSetServletAttribute() throws Exception {
+         final ServletContext mockContext = mock(ServletContext.class);
+         when(mockContext.getServerInfo()).thenReturn("jetty/9.1.0.v20131115");
++        final ConfigurationFinder finder = mock(ConfigurationFinder.class);
++        when(finder.getConfiguration(anyString())).thenReturn(mock(File.class));
++        FileBasedStorageCredentials mockCreds = mock(FileBasedStorageCredentials.class);
++        when(mockCreds.getUsername()).thenReturn("username");
++        when(mockCreds.getPassword()).thenReturn("password".toCharArray());
++        whenNew(FileBasedStorageCredentials.class).withAnyArguments().thenReturn(mockCreds);
+         @SuppressWarnings("serial")
+-        WebStorageEndPoint endpoint = new WebStorageEndPoint() {
++        WebStorageEndPoint endpoint = new WebStorageEndPoint(null, null, finder, storageFactoryProvider) {
+             @Override
+             public ServletContext getServletContext() {
+                 return mockContext;
+             }
+         };
+         ServletConfig config = mock(ServletConfig.class);
++        when(config.getInitParameter(WebStorageEndPoint.STORAGE_CLASS)).thenReturn("fooKlazz"); // let it fail through
++        when(config.getInitParameter(WebStorageEndPoint.STORAGE_ENDPOINT)).thenReturn("fooEndPoint");
++
+         ThCreatorResult result = creatWorkingThermostatHome();
+         System.setProperty(TH_HOME_PROP_NAME, result.thermostatHome.toFile().getAbsolutePath());
+         endpoint.init(config);
+@@ -248,7 +284,7 @@
+     @Test
+     public void testShutDownCancelsTimers() {
+         TimerRegistry registry = mock(TimerRegistry.class);
+-        WebStorageEndPoint endpoint = new WebStorageEndPoint(registry, null, null);
++        WebStorageEndPoint endpoint = new WebStorageEndPoint(registry, null, null, storageFactoryProvider);
+         endpoint.destroy();
+         verify(registry).shutDown();
+     }
+@@ -263,12 +299,57 @@
+         ConfigurationFinder finder = mock(ConfigurationFinder.class);
+         when(finder.getConfiguration("web.auth")).thenReturn(null);
+ 
+-        WebStorageEndPoint endpoint = new WebStorageEndPoint(registry, paths, finder);
++        WebStorageEndPoint endpoint = new WebStorageEndPoint(registry, paths, finder, storageFactoryProvider);
+         StorageCredentials creds = endpoint.getStorageCredentials();
+ 
+         assertNull(creds);
+     }
+-    
++
++    @Test
++//    @Bug(id = "PR2941",
++//            url = "http://icedtea.classpath.org/bugzilla/show_bug.cgi?id=2941",
++//            summary = "Concurrent webstorage connections may cause storage exceptions")
++    @PrepareForTest({ WebStorageEndPoint.class })
++    public void testStorageIsCreatedOnceOnInit() throws Exception {
++        final ServletContext mockContext = mock(ServletContext.class);
++        when(mockContext.getServerInfo()).thenReturn("jetty/9.1.0.v20131115");
++        final ConfigurationFinder finder = mock(ConfigurationFinder.class);
++        when(finder.getConfiguration(anyString())).thenReturn(mock(File.class));
++        FileBasedStorageCredentials mockCreds = mock(FileBasedStorageCredentials.class);
++        when(mockCreds.getUsername()).thenReturn("username");
++        when(mockCreds.getPassword()).thenReturn("password".toCharArray());
++        whenNew(FileBasedStorageCredentials.class).withAnyArguments().thenReturn(mockCreds);
++        @SuppressWarnings("serial")
++        WebStorageEndPoint endpoint = new WebStorageEndPoint(null, null, finder, storageFactoryProvider) {
++            @Override
++            public ServletContext getServletContext() {
++                return mockContext;
++            }
++        };
++        ServletConfig config = mock(ServletConfig.class);
++        when(config.getInitParameter(WebStorageEndPoint.STORAGE_CLASS)).thenReturn("fooKlazz"); // let it fail through
++        when(config.getInitParameter(WebStorageEndPoint.STORAGE_ENDPOINT)).thenReturn("fooEndPoint");
++
++        ThCreatorResult result = creatWorkingThermostatHome();
++        System.setProperty(TH_HOME_PROP_NAME, result.thermostatHome.toFile().getAbsolutePath());
++
++        // not created yet
++        verifyZeroInteractions(storageFactoryProvider);
++        verifyZeroInteractions(storageFactory);
++
++        endpoint.init(mock(ServletConfig.class));
++
++        // created once
++        verify(storageFactoryProvider).createStorageFactory();
++        verify(storageFactory).getStorage(anyString(), anyString(), any(CommonPaths.class), any(StorageCredentials.class));
++
++        endpoint.init(mock(ServletConfig.class));
++
++        // still only once
++        verify(storageFactoryProvider).createStorageFactory();
++        verify(storageFactory).getStorage(anyString(), anyString(), any(CommonPaths.class), any(StorageCredentials.class));
++    }
++
+     private ThCreatorResult creatWorkingThermostatHome() throws IOException {
+         Path testThermostatHome = Files.createTempDirectory(
+                 "foo-thermostat-home-", new FileAttribute[] {});
+diff --git a/web/server/src/test/java/com/redhat/thermostat/web/server/WebStorageEndpointTest.java b/web/server/src/test/java/com/redhat/thermostat/web/server/WebStorageEndpointTest.java
+--- a/web/server/src/test/java/com/redhat/thermostat/web/server/WebStorageEndpointTest.java
++++ b/web/server/src/test/java/com/redhat/thermostat/web/server/WebStorageEndpointTest.java
+@@ -223,7 +223,7 @@
+     public void setUp() throws Exception {
+         
+         mockStorage = mock(BackingStorage.class);
+-        StorageFactory.setStorage(mockStorage);
++        StorageFactoryImpl.setStorage(mockStorage);
+     }
+ 
+     private void startServer(int port, LoginService loginService) throws Exception {
