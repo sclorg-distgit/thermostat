@@ -8,7 +8,7 @@
 
 # non_bootstrap_build == 1 means add self-BR so that
 # xmvn-subst symlinks correctly
-%global non_bootstrap_build  1
+%global non_bootstrap_build 0
 
 %if 0%{?rhel}
 
@@ -86,7 +86,7 @@
   %global logging_bundle_version     1.1.2
   %global hc_core_bundle_version     4.3.3
   %global hc_client_bundle_version   4.3.6
-  %global gson_bundle_version        2.2.2
+  %global gson_bundle_version        2.2.4
   %global mongo_bundle_version       3.2.1
   %global lucene_analysis_core_bsn   org.apache.lucene.analyzers-common
   %global lucene_version             5.4.1
@@ -108,15 +108,7 @@
 
 
 # Base path to the JDK which will be used in boot scripts
-%if 0%{?fedora} >= 22
-  %global jdk_base /etc/alternatives/java_sdk_openjdk
-%else
-  %if 0%{?is_rhel_6}
-    %global jdk_base /usr/lib/jvm/java-1.7.0-openjdk.x86_64
-  %else
-    %global jdk_base /usr/lib/jvm/java-1.7.0-openjdk
-  %endif
-%endif 
+%global jdk_base /usr/lib/jvm/java
 
 %{?scl:%scl_package thermostat}
 %{!?scl:%global pkg_name %{name}}
@@ -221,7 +213,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.5%{?dist}
+Release:    %{custom_release}.8%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -313,7 +305,7 @@ BuildRequires: gtk2-devel
 BuildRequires: %{?scl_prefix_java_common}mvn(org.apache.felix:org.apache.felix.framework)
 BuildRequires: %{?scl_prefix_maven}mvn(org.fusesource:fusesource-pom:pom:)
 BuildRequires: %{?scl_prefix_java_common}mvn(org.apache.commons:commons-cli)
-BuildRequires: %{?scl_prefix}mvn(jline:jline)
+BuildRequires: %{?scl_prefix_java_common}mvn(jline:jline)
 BuildRequires: %{?scl_prefix_java_common}mvn(org.fusesource.jansi:jansi)
 BuildRequires: %{?scl_prefix_java_common}mvn(%{lucene_core_coords})
 BuildRequires: %{?scl_prefix_java_common}mvn(%{lucene_analyzers_coords})
@@ -1158,6 +1150,17 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Fri Jan 13 2017 Jie Kang <jkang@redhat.com> - 1.6.4-8
+- Use /usr/lib/jvm/java for jdk base, a link managed by
+  alternatives. Resolves rhbz#1398252
+
+* Wed Jan 11 2017 Jie Kang <jkang@redhat.com> - 1.6.4-7
+- Use jline from rh-java-common instead of rh-thermostat16
+- Remove self-br for bootstrap build
+
+* Wed Jan 11 2017 Jie Kang <jkang@redhat.com> - 1.6.4-6
+- Update version of gson package
+
 * Wed Oct 26 2016 Jie Kang <jkang@redhat.com> - 1.6.4-5
 - Add patch for fixing verified token removal
   Resolves RHBZ#1388898
