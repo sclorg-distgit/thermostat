@@ -213,7 +213,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.8%{?dist}
+Release:    %{custom_release}.9%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -369,7 +369,7 @@ Requires: java-devel >= 1:1.8.0
 }
 %{?scl:
 Requires: %{?scl_prefix}runtime
-Requires: java-1.7.0-openjdk-devel
+Requires: java-devel-openjdk >= 1:1.7
 }
 # Only require mongodb-server on arches where it's available
 %ifarch %{arm} %{ix86} x86_64
@@ -1150,6 +1150,10 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Mon Jan 16 2017 Jie Kang <jkang@redhat.com> - 1.6.4-9
+- Use java-devel-openjdk requires instead of a hard
+  require on java-1.7.0-openjdk. Resolves rhbz#1398232
+
 * Fri Jan 13 2017 Jie Kang <jkang@redhat.com> - 1.6.4-8
 - Use /usr/lib/jvm/java for jdk base, a link managed by
   alternatives. Resolves rhbz#1398252
