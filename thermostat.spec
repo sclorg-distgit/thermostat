@@ -220,7 +220,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.1%{?dist}
+Release:    %{custom_release}.2%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -364,7 +364,13 @@ Requires: java-devel >= 1:1.8.0
 }
 %{?scl:
 Requires: %{?scl_prefix}runtime
+%if 0%{?is_rhel_6}
+# java-devel-openjdk is introduced in RHEL 6.8
+# use java7-devel-openjdk for 6.7 and below
+Requires: java7-devel-openjdk >= 1:1.7
+%else
 Requires: java-devel-openjdk >= 1:1.7
+%endif
 }
 # Only require mongodb-server on arches where it's available
 %ifarch %{arm} %{ix86} x86_64
@@ -1157,6 +1163,9 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Wed Jan 18 2017 Jie Kang <jkang@redhat.com> - 1.6.6-2
+- Fix jdk requires for el6 case with conditional
+
 * Tue Jan 17 2017 Jie Kang <jkang@redhat.com> - 1.6.6-1
 - Rebase to latest Thermostat 1.6.6. Resolves rhbz#1398394
 - Use jline from rh-java-common instead of rh-thermostat16
