@@ -86,7 +86,7 @@
   %global logging_bundle_version     1.1.2
   %global hc_core_bundle_version     4.3.3
   %global hc_client_bundle_version   4.3.6
-  %global gson_bundle_version        2.2.2
+  %global gson_bundle_version        2.2.4
   %global mongo_bundle_version       3.2.1
   %global lucene_analysis_core_bsn   org.apache.lucene.analyzers-common
   %global lucene_version             5.4.1
@@ -108,15 +108,7 @@
 
 
 # Base path to the JDK which will be used in boot scripts
-%if 0%{?fedora} >= 22
-  %global jdk_base /etc/alternatives/java_sdk_openjdk
-%else
-  %if 0%{?is_rhel_6}
-    %global jdk_base /usr/lib/jvm/java-1.7.0-openjdk.x86_64
-  %else
-    %global jdk_base /usr/lib/jvm/java-1.7.0-openjdk
-  %endif
-%endif 
+%global jdk_base /usr/lib/jvm/java
 
 %{?scl:%scl_package thermostat}
 %{!?scl:%global pkg_name %{name}}
@@ -221,7 +213,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.5%{?dist}
+Release:    %{custom_release}.7%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -1164,6 +1156,13 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Fri Jan 13 2017 Jie Kang <jkang@redhat.com> - 1.6.4-7
+- Use /usr/lib/jvm/java for jdk base, a link managed by
+  alternatives. Resolves rhbz#1398252
+
+* Wed Jan 11 2017 Jie Kang <jkang@redhat.com> - 1.6.4-6
+- Update version of gson package
+
 * Wed Oct 26 2016 Jie Kang <jkang@redhat.com> - 1.6.4-5
 - Add patch for fixing verified token removal
   Resolves RHBZ#1388898
