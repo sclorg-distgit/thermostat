@@ -4,7 +4,7 @@
 # Upstream Thermostat version triplet
 %global major        1
 %global minor        6
-%global patchlevel   4
+%global patchlevel   6
 
 # non_bootstrap_build == 1 means add self-BR so that
 # xmvn-subst symlinks correctly
@@ -43,18 +43,18 @@
   #########################################
 
   # Real OSGi Bundle-Version is 3.9.3.Final
-  %global netty_bundle_version       3.9.3
+  %global netty_bundle_version       3.10.6
   %global jcommon_bundle_version     1.0.23
   %global jfreechart_bundle_version  1.0.19
   # apache-commons-beanutils
-  %global beanutils_bundle_version   1.9.2
+  %global beanutils_bundle_version   1.9.3
   # apache-commons-codec
   %global codec_bundle_version       1.10.0
   # apache-commons-collections
   %global collections_bundle_version 3.2.2
   # apache-commons-logging
   %global logging_bundle_version     1.2.0
-  %global hc_core_bundle_version     4.4.5
+  %global hc_core_bundle_version     4.4.6
   %global hc_client_bundle_version   4.5.2
   %global gson_bundle_version        2.3.1
   %global mongo_bundle_version       3.2.1
@@ -64,8 +64,12 @@
   # endpoint plugin: a.k.a web-storage-service
   %global javax_servlet_bundle_version 3.1.0
   %global javax_servlet_bsn            javax.servlet-api
-  %global jgraphx_bundle_version       3.5.0
-  %global jetty_version                9.4.0
+  %global jgraphx_bundle_version       3.6.0
+  # xmvn-subst in rawhide and later fedoras support
+  # in reactor symlinking. See RHBZ#1226251
+  %global xmvn_subst_args              -R %{buildroot} .
+  %global jetty_version                9.4.0.M0
+  %global tomcat_version               8
 
 %else
 
@@ -97,8 +101,9 @@
   %global javax_servlet_bundle_version 3.0.0
   %global javax_servlet_bsn            javax.servlet
   %global jgraphx_bundle_version       3.1.2
+  %global xmvn_subst_args              .
   %global jetty_version                9.0.3.v20130506
-
+  %global tomcat_version               7
 %endif
 
 # Jansi is used as bootstrap bundle and the
@@ -126,6 +131,7 @@
   %global system_logdir %{_root_localstatedir}/log/%{name}
   %global system_statedir %{_root_localstatedir}/run/%{name}
   %global system_sbindir %{_root_sbindir}
+  %global thermostat_desktop_app_anme "'Thermostat (from SCL)'"
 
 # directories for system user for storage as a systemd service
   %global user_datadir %{_localstatedir}/lib
@@ -145,6 +151,7 @@
   %global system_cachedir %{_localstatedir}/cache/%{name}
   %global system_logdir %{_localstatedir}/log/%{name}
   %global system_statedir %{_localstatedir}/run/%{name}
+  %global thermostat_desktop_app_anme Thermostat
 }
 
 # Some Maven coordinates mismatch due to compat versioning.
@@ -213,7 +220,7 @@ Name:       %{?scl_prefix}thermostat
 Version:    %{major}.%{minor}.%{patchlevel}
 # If building from snapshot out of hg, uncomment and adjust below value as appropriate
 #Release:    0.1.20131122hg%{hgrev}%{?dist}
-Release:    %{custom_release}.9%{?dist}
+Release:    %{custom_release}.1%{?dist}
 Summary:    A monitoring and serviceability tool for OpenJDK
 License:    GPLv2+ with exceptions and OFL
 URL:        http://icedtea.classpath.org/thermostat/
@@ -244,24 +251,12 @@ Patch1:     0001_shared_fix_bundle_loading.patch
 # is 4.3 OSGi spec.
 Patch2:     0002_shared_osgi_spec_fixes.patch
 
-# This patch is in upstream and should be removed once the thermostat package
-# in the collection is updated to the latest release. The changeset can be
-# found at:
-# http://icedtea.classpath.org/hg/release/thermostat-1.6/rev/7a1c62f9337b
-# This resolves RHBZ#1329003
-Patch3:     0003_storage_init_fix.patch
-
-# This patch is in upstream and should be removed once the thermostat package
-# in the collection is updated to the latest release. The changeset can be
-# found at:
-# http://icedtea.classpath.org/hg/release/thermostat-1.6/rev/a26429779377
-# This resolves RHBZ#1388898
-Patch4:     0004_verify_token_removal_fix.patch
-
+%{?scl:
 %if 0%{?non_bootstrap_build}
 # Work-around xmvn-subst limitation
 BuildRequires: %{?scl_prefix}thermostat-webapp = %{version}
 %endif
+}
 
 # RHEL 6 does not have virtual provides java-devel >= 1.7
 %if 0%{?is_rhel_6}
@@ -415,6 +410,10 @@ Requires: %{?scl_prefix_java_common}osgi(org.apache.httpcomponents.httpcore) >= 
 Requires: %{?scl_prefix_java_common}osgi(org.apache.httpcomponents.httpclient) >= %{hc_client_bundle_version}
 Requires: %{?scl_prefix_java_common}osgi(org.apache.httpcomponents.httpmime) >= %{hc_client_bundle_version}
 
+# The version of asm that this package builds against gets bundled in
+# See https://fedorahosted.org/fpc/ticket/226 for the same issue in another package
+Provides: %{?scl_prefix}bundled(%{?scl_prefix_maven}mvn(%{object_web_asm_maven_coords})
+
 %description
 Thermostat is a monitoring and instrumentation tool for the Hotspot JVM,
 with support for monitoring multiple JVM instances. The system is made
@@ -462,8 +461,9 @@ security.
 #%%setup -q -n %%{pkg_name}-%%{major}-%%{minor}-%%{hgrev}
 %patch1 -p1
 %patch2 -p1
-%patch3 -p1
-%patch4 -p1
+
+# Replace thermostatrc with Fedora's version
+cp %{SOURCE4} distribution/config/thermostatrc
 
 # Fix up artifact names which have different name upstream
 #  lucene
@@ -477,9 +477,9 @@ security.
 %pom_add_dep "org.apache.lucene:lucene-core:%{lucene_version}" vm-heap-analysis/distribution
 # Fix up artifact names for jgraphx
 %pom_remove_dep "org.tinyjee.jgraphx:jgraphx"
-%pom_add_dep "com.mxgraph:jgraphx:3.1.2.0"
+%pom_add_dep "com.mxgraph:jgraphx:%{jgraphx_bundle_version}.0"
 %pom_remove_dep "org.tinyjee.jgraphx:jgraphx" thread/client-swing
-%pom_add_dep "com.mxgraph:jgraphx:3.1.2.0" thread/client-swing
+%pom_add_dep "com.mxgraph:jgraphx:%{jgraphx_bundle_version}.0" thread/client-swing
 #  httpclient
 %pom_remove_dep org.apache.httpcomponents:httpclient-osgi web/client
 %pom_add_dep org.apache.httpcomponents:httpclient:4.4.0 web/client
@@ -641,9 +641,13 @@ popd
 #    install javadoc:aggregate
 # Everything after '--' is passed to plain xmvn/mvn
 %mvn_build -f -- -Dthermostat.home=%{thermostat_home} \
+                 -Dthermostat.jdk.home=%{jdk_base} \
                  -Dthermostat.system.user=thermostat \
                  -Dthermostat.system.group=thermostat \
+                 -Dthermostat.desktop.app.name=%{thermostat_desktop_app_name} \
                  -Dnetty.version=%{netty_bundle_version}.Final \
+                 -Dtomcat=%{tomcat_version} \
+                 -Dpkg_name=%{pkg_name} \
                  -Dcommons-logging.version=%{logging_bundle_version} \
                  -Dcommons-collections.version=%{collections_bundle_version} \
                  -Dcommons-codec.osgi-version=%{codec_bundle_version} \
@@ -661,22 +665,10 @@ popd
                  -Dlucene.osgi-version=%{lucene_version} \
                  -Dosgi.compendium.bundle.symbolic-name=org.osgi.compendium \
                  -Dosgi.compendium.osgi-version=4.1.0 \
-                 -Djgraphx.osgi.version=%{jgraphx_bundle_version} \
+                 -Djgraphx.osgi.version=%{jgraphx_bundle_version}.0 \
                  -Djetty.javax.servlet.osgi.version=%{javax_servlet_bundle_version} \
                  -Djavax.servlet.bsn=%{javax_servlet_bsn} \
                  -Djetty.version=%{jetty_version}
-
-# Make path to java so that it keeps working after updates.
-# We require java >= 1.7.0
-sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat-agent-proxy
-sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat-webservice
-sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat-command-channel
-sed -i 's|^JAVA=.*|JAVA="%{jdk_base}/bin/java"|' distribution/target/image/bin/thermostat
-# Fix path to tools.jar, replace system thermostatrc
-sed 's|__TOOLS_PATH__|%{jdk_base}/lib/tools.jar|' %{SOURCE4} > distribution/target/image/etc/thermostatrc
-sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat-agent-proxy
-sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat-command-channel
-sed -i 's|^TOOLS_JAR=.*|TOOLS_JAR="%{jdk_base}/lib/tools.jar"|' distribution/target/image/bin/thermostat
 %{?scl:EOF}
 
 
@@ -699,9 +691,11 @@ mkdir -p %{buildroot}%{system_initrddir}
 mkdir -p %{buildroot}%{_unitdir}
 %endif
 # Thermostat icon lives there
-mkdir -p %{buildroot}%{_datarootdir}/icons/hicolor/scalable/apps
+mkdir -p %{buildroot}%{system_root_datadir}/icons/hicolor/scalable/apps
 # Thermostat desktop lives there
-mkdir -p %{buildroot}%{_datarootdir}/applications
+mkdir -p %{buildroot}%{system_root_datadir}/applications
+# Thermostat app data file lives there
+mkdir -p %{buildroot}%{system_root_datadir}/appdata
 # Example config files are in docdir
 mkdir -p %{buildroot}%{_docdir}/%{pkg_name}
 # Man page
@@ -771,6 +765,11 @@ install -m 0644 distribution/packaging/shared/man/%{pkg_name}.1 %{buildroot}%{_m
 mkdir -p %{buildroot}%{system_root_datadir}/bash-completion/completions
 install -pm 644 distribution/target/packaging/bash-completion/thermostat-completion %{buildroot}%{system_root_datadir}/bash-completion/completions/%{name}
 
+# install files needed for proper desktop integration
+install -m 0644 distribution/target/packaging/desktop/%{pkg_name}.desktop %{buildroot}%{system_root_datadir}/applications/%{name}.desktop
+install -m 0644 distribution/target/packaging/icons/256px.svg %{buildroot}%{system_root_datadir}/icons/hicolor/scalable/apps/%{name}.svg
+install -m 0644 distribution/target/packaging/desktop/%{pkg_name}.appdata.xml %{buildroot}%{system_root_datadir}/appdata/%{name}.appdata.xml
+
 rm -rf distribution/target/image/bin/%{pkg_name}.orig
 # Remove developer setup things.
 rm distribution/target/image/bin/thermostat-devsetup
@@ -783,13 +782,13 @@ cp -a distribution/target/image %{buildroot}%{thermostat_home}
 
 # Replace jars with symlinks to installed libs
 pushd %{buildroot}%{thermostat_home}/libs
-  xmvn-subst .
+  xmvn-subst %{xmvn_subst_args}
 popd
 # Do the same for thermostat plugin dirs
 pushd %{buildroot}%{thermostat_home}/plugins
 for plugin_name in $(ls); do
   pushd $plugin_name
-    xmvn-subst .
+    xmvn-subst %{xmvn_subst_args}
   popd
 done
 popd
@@ -818,6 +817,8 @@ ln -s %{_datarootdir}/%{pkg_name}/bin/thermostat \
     %{buildroot}%{_bindir}/thermostat
 ln -s %{_datarootdir}/%{pkg_name}/bin/thermostat-setup \
     %{buildroot}%{_bindir}/thermostat-setup
+ln -s %{_datarootdir}/%{pkg_name}/bin/thermostat-common \
+    %{buildroot}%{_bindir}/thermostat-common
 
 # Move config files to /etc and symlink stuff under
 # $THERMOSTAT_HOME/etc to it. Put example configs
@@ -882,7 +883,7 @@ ln -s %{thermostat_catalina_base}/webapps/%{pkg_name} %{buildroot}%{thermostat_h
  
 # Replace jars with symlinks
 pushd %{buildroot}%{thermostat_catalina_base}/webapps/%{pkg_name}/WEB-INF/lib
-  xmvn-subst .
+  xmvn-subst %{xmvn_subst_args}
 popd
 
 # Remove tools.jar (coming from the JVM). We also don't need jzlib.jars.
@@ -956,15 +957,10 @@ mkdir -p %{buildroot}/%{_root_localstatedir}/log/%{thermostat_tomcat_service_nam
 %{?scl:EOF}
 
 %check
-# Perform some sanity checks on paths to JAVA/TOOLS_JAR
-# in important boot scripts. See RHBZ#1052992 and
-# RHBZ#1053123
-TOOLS_JAR="$(grep -E THERMOSTAT_EXT_BOOT_CLASSPATH='.*tools.jar' %{buildroot}/%{_sysconfdir}/%{pkg_name}/thermostatrc | cut -d= -f2 | cut -d\" -f2)"
-test "${TOOLS_JAR}" = "%{jdk_base}/lib/tools.jar"
-TOOLS_JAR="$(grep 'TOOLS_JAR=' %{buildroot}/%{thermostat_home}/bin/thermostat-agent-proxy | cut -d= -f2 | cut -d\" -f2)"
-test "${TOOLS_JAR}" = "%{jdk_base}/lib/tools.jar"
-JAVA="$(grep 'JAVA=' %{buildroot}/%{thermostat_home}/bin/thermostat | cut -d= -f2 | cut -d\" -f2)"
-test "${JAVA}" = "%{jdk_base}/bin/java"
+# Perform a sanity check so as to ensure that JAVA_HOME will point to a
+# stable path (across OpenJDK package updates).
+JDK_HOME_CANDIDATE=$(grep 'jdk_home_candidate=' %{buildroot}/%{thermostat_home}/bin/thermostat-common | cut -d= -f2 | cut -d\" -f2)
+test "${JDK_HOME_CANDIDATE}" = "%{jdk_base}"
 
 %pre
 %{?scl:
@@ -982,7 +978,7 @@ ${__bin_dir}/useradd -c "Thermostat system user" -g thermostat \
 # Install but don't activate
 %systemd_post %{?scl_prefix}%{pkg_name}-storage.service
 # Required for icon cache (i.e. Thermostat icon)
-/bin/touch --no-create %{_datadir}/icons/hicolor &>/dev/null || :
+/bin/touch --no-create %{system_root_datadir}/icons/hicolor &>/dev/null || :
 
 %post webapp
 # install but don't activate
@@ -996,14 +992,14 @@ ${__bin_dir}/useradd -c "Thermostat system user" -g thermostat \
 %postun
 # Required for icon cache (i.e. Thermostat icon)
 if [ $1 -eq 0 ] ; then
-    /bin/touch --no-create %{_datadir}/icons/hicolor &> /dev/null
-    /usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor &>/dev/null || :
+    /bin/touch --no-create %{system_root_datadir}/icons/hicolor &> /dev/null
+    /usr/bin/gtk-update-icon-cache %{system_root_datadir}/icons/hicolor &>/dev/null || :
 fi
 %systemd_postun %{?scl_prefix}%{pkg_name}-storage.service
 
 %posttrans
 # Required for icon cache (i.e. Thermostat icon)
-/usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor &>/dev/null || :
+/usr/bin/gtk-update-icon-cache %{system_root_datadir}/icons/hicolor &>/dev/null || :
 
 %files -f .mfiles
 %doc LICENSE
@@ -1032,6 +1028,10 @@ fi
 # be installed
 %dir %{system_root_datadir}/bash-completion/completions
 %dir %{system_root_datadir}/bash-completion
+# Own desktop related files
+%{system_root_datadir}/applications/%{name}.desktop
+%{system_root_datadir}/icons/hicolor/scalable/apps/%{name}.svg
+%{system_root_datadir}/appdata/%{name}.appdata.xml
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/plugins.d
 %config(noreplace) %{_sysconfdir}/%{pkg_name}/ssl.properties
 %config %{_sysconfdir}/%{pkg_name}/commands
@@ -1081,6 +1081,7 @@ fi
 %{_jnidir}/thermostat-*.jar
 %{_bindir}/thermostat
 %{_bindir}/thermostat-setup
+%{_bindir}/thermostat-common
 %dir %{_mandir}/man1
 %{_mandir}/man1/%{pkg_name}.1*
 %if 0%{?with_systemd}
@@ -1150,6 +1151,9 @@ fi
 %{_datadir}/%{pkg_name}/plugins/embedded-web-endpoint
 
 %changelog
+* Tue Jan 17 2017 Jie Kang <jkang@redhat.com> - 1.6.6-1
+- Rebase to latest Thermostat 1.6.6. Resolves rhbz#1398394
+
 * Mon Jan 16 2017 Jie Kang <jkang@redhat.com> - 1.6.4-9
 - Use java-devel-openjdk requires instead of a hard
   require on java-1.7.0-openjdk. Resolves rhbz#1398232
